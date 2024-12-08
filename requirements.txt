@@ -1,0 +1,11 @@
+pyserial~=3.5
+pyglet~=2.0.10
+lupa~=2.0
+SLPP~=1.2.3
+more_itertools~=10.2.0
+pillow~=10.3.0
+customtkinter~=5.2.2
+psutil~=5.9.8
+requests~=2.32.3
+python-dotenv~=1.0.1
+packaging~=24.2
