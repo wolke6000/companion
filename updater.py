@@ -27,6 +27,8 @@ def request_latest():
 
 def check_for_update():
     ans_json = request_latest()
+    if ans_json.get("status", None) != "200":
+        return None
     tag_name = ans_json.get("tag_name")
     latest_version = Version(tag_name)
 
