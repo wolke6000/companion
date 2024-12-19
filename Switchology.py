@@ -1,8 +1,13 @@
+import hashlib
 import subprocess
 import time
 
 import customtkinter
-from tkinter import StringVar, filedialog
+from tkinter import StringVar, filedialog, messagebox
+
+import requests
+from tempfile import TemporaryDirectory
+
 from Device import Device, DeviceViewFrame, ControlIndicator
 import serial
 from serial.tools.list_ports import comports
@@ -350,6 +355,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
+        self.firmware_update_checked = False
+
         self.var_mode1 = StringVar(value="")
         self.var_mode1.trace_add("write", self.var_mode_update)
         self.var_mode2 = StringVar(value='')
@@ -446,19 +453,58 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         self.firmwarepath = StringVar(value="")
         self.var_fwve = StringVar(value="")
 
+        self.btn_upol = customtkinter.CTkButton(self, text="Update from server", command=self.update_from_server)
+        self.btn_upol.grid(column=1, row=0, columnspan=2, padx=5, pady=5)
         self.btn_slfw = customtkinter.CTkButton(self, text="Select file", command=self.select_file)
-        self.btn_slfw.grid(column=1, row=0, padx=5, pady=5)
-        self.btn_upfw = customtkinter.CTkButton(self, text="Update", command=self.update_firmware, state='disabled')
-        self.btn_upfw.grid(column=2, row=0, padx=5, pady=5)
+        self.btn_slfw.grid(column=1, row=1, padx=5, pady=5)
+        self.btn_upfw = customtkinter.CTkButton(self, text="Update from file", command=self.update_firmware, state='disabled')
+        self.btn_upfw.grid(column=2, row=1, padx=5, pady=5)
         self.ent_fwpt = customtkinter.CTkEntry(self, textvariable=self.firmwarepath, state='disabled')
-        self.ent_fwpt.grid(column=1, row=1, columnspan=2, padx=5, pady=5)
+        self.ent_fwpt.grid(column=1, row=2, columnspan=2, padx=5, pady=5)
         self.pro_upfw = customtkinter.CTkProgressBar(self, orientation="horizontal", mode='determinate')
-        self.pro_upfw.grid(column=1, row=2, columnspan=2, padx=5, pady=5)
+        self.pro_upfw.grid(column=1, row=3, columnspan=2, padx=5, pady=5)
         self.pro_upfw.set(0)
 
     def refresh(self, device):
         self.device = device
         self.var_fwve.set(device.fwver)
+        self.update_from_server()
+
+    def update_from_server(self):
+        update_server_url = "https://us-central1-switchology-a3b47.cloudfunctions.net/download_latest_firmware"
+        logging.info("reqeuesting firmware information from server...")
+        response = requests.get(update_server_url)
+        response_json = response.json()
+        if self.device.fwver == response_json.get('tag'):
+            logging.info("firmware is up to date")
+            return
+        ans = messagebox.askquestion(
+                title="Firmware update available!",
+                message=f"There is a new version available! Do you want to update?\n"
+                        f"current version: \"{self.device.fwver}\", new version: \"{response_json.get('tag')}\"\n"
+                        f"published at: {response_json.get('published_at')}\n"
+        )
+        if ans == 'yes':
+            with TemporaryDirectory() as tempdir:
+                logging.debug(f"temporary directory created: \"{tempdir}\"")
+                file_response = requests.get(response_json.get("url"))
+                hash_calculator = hashlib.sha256()
+                firmware_file_path = os.path.join(tempdir, f"{response_json.get('tag')}.bin")
+                with open(firmware_file_path, "w+b") as firmware_file:
+                    for chunk in file_response.iter_content(chunk_size=8192):
+                        firmware_file.write(chunk)
+                        hash_calculator.update(chunk)
+
+                    # firmware_file.seek(0)
+                firmware_hash = hash_calculator.hexdigest()
+
+                if firmware_hash != response_json.get('hash'):
+                    logging.error(f"firmware download was not successfull!")
+                    return
+
+                logging.info("firmware download successfull")
+                self.firmwarepath.set(firmware_file.name)
+                self.update_firmware()
 
     def update_firmware(self):
         logging.info("updating firmware...")
