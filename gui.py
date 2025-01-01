@@ -230,8 +230,8 @@ def main():
     logging.getLogger().addHandler(lh)
 
     def dispatch_selected_device_events():
-        # if gui.bindings_frame.selected_device:
-        #     gui.bindings_frame.selected_device.dispatch_events()
+        for device in gui.devices:
+            device.dispatch_events()
         gui.after(100, dispatch_selected_device_events)
 
     gui.after(100, dispatch_selected_device_events)
