@@ -6,7 +6,7 @@ from tkinter import filedialog, messagebox
 import logging
 import argparse
 import customtkinter
-from Device import Device
+from Device import Device, device_classes
 from Switchology import SwitchologyDevice, NotSwitchologyDeviceError
 
 import ctypes
@@ -41,12 +41,12 @@ def get_devices():
     def _device_enum(device_instance, arg):
         i_di_device = dinput.IDirectInputDevice8()
         _i_dinput.CreateDevice(device_instance.contents.guidInstance, ctypes.byref(i_di_device), None)
-        try:
-            devices.append(SwitchologyDevice(i_di_device, device_instance.contents))
-            logging.info(f"Found Switchology Device \"{device_instance.contents.tszProductName}\"")
-        except NotSwitchologyDeviceError:
-            # devices.append(Device(i_di_device, device_instance.contents))
-            logging.debug(f"Ingoring Non-Switchology Device \"{device_instance.contents.tszProductName}\"")
+        product_guid = device_instance.contents.guidProduct
+        pid = (product_guid.Data1 >> 16) & 0xFFFF
+        vid = product_guid.Data1 & 0xFFFF
+        logging.debug(f"found device with VID: {hex(vid)}, PID: {hex(pid)}")
+        temp_device_class = device_classes.get((vid, pid), Device)
+        devices.append(temp_device_class(i_di_device, device_instance.contents))
         return dinput.DIENUM_CONTINUE
 
     logging.debug("Enumerating DirectInput Devices...")

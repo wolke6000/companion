@@ -8,7 +8,9 @@ from tkinter import StringVar, filedialog, messagebox
 import requests
 from tempfile import TemporaryDirectory
 
-from Device import Device, DeviceViewFrame, ControlIndicator
+from serial.serialutil import SerialException
+
+from Device import Device, DeviceViewFrame, ControlIndicator, device_classes
 import serial
 from serial.tools.list_ports import comports
 import logging
@@ -571,13 +573,8 @@ class SwitchologyDevice(Device):
         self.port = None
         if not (self.vid, self.pid) in [
             (0x0483, 0xA4F5),  # VID & PID assigned to Switchology MCP (starting with firmare v0.4.0)
-            (1155, 54321),  # compatibility with arbitrary VID and PID for older firmware prior v0.4.0
+            (0x0483, 54321),  # compatibility with arbitrary VID and PID for older firmware prior v0.4.0
         ]:
-            raise NotSwitchologyDeviceError
-        for comport in comports():
-            if comport.serial_number == self.serial_number:
-                self.port = comport
-        if not self.port:
             raise NotSwitchologyDeviceError
 
     def __del__(self):
@@ -585,8 +582,15 @@ class SwitchologyDevice(Device):
         self.close_comport()
 
     def open_comport(self):
+        if self.port is None:
+            for comport in comports():
+                if comport.serial_number == self.serial_number:
+                    self.port = comport
         if self.serial_itf is None:
-            self.serial_itf = serial.Serial(self.port.device)
+            try:
+                self.serial_itf = serial.Serial(self.port.device)
+            except SerialException as e:
+                logging.error(e)
         if not self.serial_itf.is_open:
             self.serial_itf.open()
         return self.serial_itf.is_open
@@ -650,3 +654,6 @@ class SwitchologyDevice(Device):
         if not self._base_mode:
             self._base_mode = self.send_command('gbm')
         return self._base_mode
+
+device_classes[(0x0483, 0xA4F5)] = SwitchologyDevice  # VID & PID assigned to Switchology MCP (starting with firmware v0.4.0)
+device_classes[(0x0483, 0xD431)] = SwitchologyDevice  # compatibility with arbitrary VID and PID for older firmware prior v0.4.0

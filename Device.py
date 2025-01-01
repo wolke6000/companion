@@ -9,6 +9,8 @@ from pyglet.libs.win32.dinput import DIPROPHEADER, WCHAR, MAX_PATH
 import customtkinter
 
 
+device_classes = dict()
+
 class DIPROPGUIDANDPATH(ctypes.Structure):
     _fields_ = (
         ('diph', DIPROPHEADER),
