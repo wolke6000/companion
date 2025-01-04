@@ -69,7 +69,7 @@ def main():
     with open(".gitignore", "r") as f:
         gitignore = "".join(f.readlines())
     for item_name in os.listdir(os.getcwd()):
-        if item_name in gitignore and item_name not in ["gitrev.py", "res"]:
+        if item_name in gitignore and item_name not in ["gitrev.py", "res", ".gitignore"]:
             continue
         item_path = os.path.join(os.getcwd(), item_name)
         print(f"Copying {item_path}...")
