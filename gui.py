@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-import tkinter.messagebox
 from tkinter import filedialog, messagebox
 import logging
 import argparse
@@ -116,7 +115,7 @@ class GUI(customtkinter.CTk):
 
         latest_version = check_for_update()
         if latest_version:
-            ans = tkinter.messagebox.askquestion(
+            ans = messagebox.askquestion(
                 title="Update available!",
                 message=f"There is a new version available!\n"
                         f"Your version: \"{gitrev}\", latest version: \"{latest_version}\"\n"
@@ -124,6 +123,10 @@ class GUI(customtkinter.CTk):
             )
             if ans == "yes":
                 update()
+                messagebox.showinfo(
+                    title="Update complete!",
+                    message=f"The update to \"{latest_version}\" is complete. The programm will now restart!"
+                )
                 os.execl(sys.executable, os.path.abspath(__file__), *sys.argv)
 
 
