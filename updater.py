@@ -79,7 +79,7 @@ def create_backup(version):
 
 def update():
 
-    create_backup(str(datetime.datetime.now()).replace(":", ""))
+    # create_backup(str(datetime.datetime.now()).replace(":", ""))
 
     ans_json = request_latest()
     zipball_url = ans_json.get('zipball_url')
