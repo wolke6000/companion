@@ -582,17 +582,45 @@ class SwitchologyDevice(Device):
         self.close_comport()
 
     def open_comport(self):
-        if self.port is None:
+        timout_at = time.thread_time_ns() + 1e9
+        while self.port is None:
+            if time.thread_time_ns() > timout_at:
+                raise TimeoutError
+            logging.debug("enumerating comports...")
             for comport in comports():
                 if comport.serial_number == self.serial_number:
                     self.port = comport
-        if self.serial_itf is None:
+                    break
+
+        timout_at = time.thread_time_ns() + 1e9
+        while self.serial_itf is None:
+            if time.thread_time_ns() > timout_at:
+                raise TimeoutError
             try:
-                self.serial_itf = serial.Serial(self.port.device)
-            except SerialException as e:
-                logging.error(e)
-        if not self.serial_itf.is_open:
-            self.serial_itf.open()
+                self.serial_itf = serial.Serial(
+                    port=self.port.device,
+                    baudrate=9600,
+                    bytesize=serial.EIGHTBITS,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
+                    xonxoff=False,
+                    rtscts=False,
+                    dsrdtr=False,
+                )
+                break
+            except Exception as e:
+                logging.debug(e)
+
+        timout_at = time.thread_time_ns() + 1e9
+        while not self.serial_itf.is_open:
+            if time.thread_time_ns() > timout_at:
+                raise TimeoutError
+            try:
+                self.serial_itf.open()
+                self.serial_itf.flush()
+            except Exception as e:
+                logging.debug(e)
+                self.serial_itf.close()
         return self.serial_itf.is_open
 
     def close_comport(self):
