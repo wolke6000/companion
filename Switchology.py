@@ -32,7 +32,7 @@ class SwitchologyDeviceViewFrame(DeviceViewFrame):
         super().__init__(master, **kwargs)
         self.scaling = customtkinter.ScalingTracker.get_widget_scaling(self)
         self.images = dict()
-        self.subsample = kwargs.get("subsample", 4)
+        self.subsample = kwargs.get("subsample", 3.556)
         self.load_images()
         self.offset_x = 0
         self.offset_y = 0
