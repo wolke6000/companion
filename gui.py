@@ -85,7 +85,8 @@ class GUI(customtkinter.CTk):
             tabframe.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
             try:
                 tabframe.refresh(device)
-            except:
+            except Exception as e:
+                logging.error(e)
                 continue
         self.device_tabview.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
