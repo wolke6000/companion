@@ -370,6 +370,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.var_buid = StringVar(value="")
         self.var_conn = StringVar(value='')
         self.var_udpe = StringVar(value="")
+        self.var_blfc = StringVar(value="")
 
         self.lbl_fwve = customtkinter.CTkLabel(self, text='Firmware Version')
         self.lbl_fwve.grid(row=0, column=0, sticky="w")
@@ -416,6 +417,11 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.ent_udpe = customtkinter.CTkEntry(self, textvariable=self.var_udpe)
         self.ent_udpe.grid(row=6, column=1)
 
+        self.lbl_blfc = customtkinter.CTkLabel(self, text='Backlight Factor')
+        self.lbl_blfc.grid(row=7, column=0, sticky="w")
+        self.ent_blfc = customtkinter.CTkEntry(self, textvariable=self.var_blfc)
+        self.ent_blfc.grid(row=7, column=1)
+
         self.btn_write = customtkinter.CTkButton(self, text="Write", command=self.write_all)
         self.btn_write.grid()
         self.btn_reset = customtkinter.CTkButton(self, text="Reset", command=lambda: self.device.reset())
@@ -430,6 +436,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.var_fwve.set(device.fwver)
         self.var_mode.set(device.base_mode)
         self.var_udpe.set(device.update_period)
+        self.var_blfc.set(device.backlight_factor)
+
         mode = int(self.var_mode.get(), 16)
         mode1 = int(mode / 256)
         mode2 = int(mode % 256)
@@ -440,6 +448,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         for command in [
             f'sbm {self.var_mode.get()}',
             f'sup {hex(int(self.var_udpe.get()))}',
+            f'sbf {hex(int(self.var_blfc.get()))}'
         ]:
             ans = self.device.send_command(command)
             if "ok" in ans.lower():
@@ -569,6 +578,7 @@ class SwitchologyDevice(Device):
         self._hw_ver = None
         self._base_mode = None
         self._update_period = None
+        self._backlight_factor = None
         self.serial_itf = None
         self.port = None
         if not (self.vid, self.pid) in [
@@ -647,6 +657,7 @@ class SwitchologyDevice(Device):
         self._hw_ver = None
         self._base_mode = None
         self._update_period = None
+        self._backlight_factor = None
         self.send_command("rst")
         time.sleep(5)
 
@@ -682,6 +693,12 @@ class SwitchologyDevice(Device):
         if not self._base_mode:
             self._base_mode = self.send_command('gbm')
         return self._base_mode
+
+    @property
+    def backlight_factor(self):
+        if not self._backlight_factor:
+            self._backlight_factor = int(self.send_command('gbf'), 16)
+        return self._backlight_factor
 
 device_classes[(0x0483, 0xA4F5)] = SwitchologyDevice  # VID & PID assigned to Switchology MCP (starting with firmware v0.4.0)
 device_classes[(0x0483, 0xD431)] = SwitchologyDevice  # compatibility with arbitrary VID and PID for older firmware prior v0.4.0
