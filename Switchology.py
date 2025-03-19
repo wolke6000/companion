@@ -700,5 +700,12 @@ class SwitchologyDevice(Device):
             self._backlight_factor = int(self.send_command('gbf'), 16)
         return self._backlight_factor
 
+    def get_settings_dict(self):
+        return {
+            "build_id": self.build_id,
+            "base_mode": self.base_mode,
+            "update_period": self.update_period,
+        }
+
 device_classes[(0x0483, 0xA4F5)] = SwitchologyDevice  # VID & PID assigned to Switchology MCP (starting with firmware v0.4.0)
 device_classes[(0x0483, 0xD431)] = SwitchologyDevice  # compatibility with arbitrary VID and PID for older firmware prior v0.4.0

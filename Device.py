@@ -236,6 +236,9 @@ class Device:
             for subscriber in self.subscribers[control]:
                 subscriber(value)
 
+    def get_settings_dict(self):
+        return dict()
+
 
 class ControlIndicator(customtkinter.CTkLabel):
 
