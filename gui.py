@@ -93,6 +93,7 @@ class GUI(customtkinter.CTk):
         if self.bindings_frame.selected_device:
             self.bindings_frame.selected_device.unsubscribe_all()
         self.bindings_frame.selected_device = device
+        self.bindings_frame.populate_controls_list()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
