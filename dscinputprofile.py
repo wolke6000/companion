@@ -10,8 +10,10 @@ import customtkinter
 from tkinter import filedialog, messagebox
 from pyglet.input.base import Button, AbsoluteAxis
 
+from Device import Device, ControlIndicator
 from gui import GUI, appdata_path, PathSelector
 
+pad = 3
 
 lua = LuaRuntime()
 
@@ -452,9 +454,9 @@ class DCSProfileManager:
 
 class BindingsFrame(customtkinter.CTkFrame):
     filetypes = [("DCS profile", ".diff.lua")]
+    selected_device: Device | None
 
     def __init__(self, master: GUI, **kwargs):
-        pad = 3
         super().__init__(master, **kwargs)
 
         self.dpm = DCSProfileManager()
@@ -463,15 +465,21 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.blub = customtkinter.CTkLabel(self, text="DCS Input Profiles")
         self.blub.grid(row=0, column=0, columnspan=2, padx=pad, pady=pad)
 
-        self.dcs_path_selector = PathSelector(self, path=self.dpm.dcs_path, title="DCS path")
-        self.dcs_path_selector.grid(row=1, column=0, columnspan=2, sticky="ew", padx=pad, pady=pad)
+        self.load_profiles_button = customtkinter.CTkButton(
+            master=self,
+            text="\u21bb",
+            command=self.load_profiles,
+            width=30,
+        )
+        self.load_profiles_button.grid(row=1, column=0, padx=pad, pady=pad)
 
-        self.dcs_savegames_path_selector = PathSelector(self, path=self.dpm.dcs_savegames_path,
-                                                        title="DCS Saved Games path")
-        self.dcs_savegames_path_selector.grid(row=2, column=0, columnspan=2, sticky="ew", padx=pad, pady=pad)
-
-        self.load_profiles_button = customtkinter.CTkButton(self, text="Reload data from DCS", command=self.load_profiles)
-        self.load_profiles_button.grid(row=3, column=0, columnspan=2, padx=pad, pady=pad)
+        self.settings_button = customtkinter.CTkButton(
+            master=self,
+            text="\u26ed",
+            command=self.show_settings_popup,
+            width=30,
+        )
+        self.settings_button.grid(row=1, column=1, padx=pad, pady=pad)
 
         self.aircraft_label = customtkinter.CTkLabel(self, text="Aircraft")
         self.aircraft_label.grid(row=4, column=0, sticky="w", padx=pad, pady=pad)
@@ -484,19 +492,8 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.aircraft_combobox.grid(row=4, column=1, sticky="ew", padx=pad, pady=pad)
         self.last_aircraft_choice = None
 
-        self.category_label = customtkinter.CTkLabel(self, text="Category")
-        self.category_label.grid(row=5, column=0, sticky="w", padx=pad, pady=pad)
-        self.category_combobox = customtkinter.CTkComboBox(
-            self,
-            values=[],
-            state="disabled",
-            command=self.switch_category,
-        )
-        self.category_combobox.grid(row=5, column=1, sticky="ew", padx=pad, pady=pad)
-
-        self.bindings = dict()
-        self.bindings_frame = customtkinter.CTkScrollableFrame(self, width=500)
-        self.bindings_frame.grid(row=6, column=0, columnspan=2, sticky="ns", padx=pad, pady=pad)
+        self.controls_frame = customtkinter.CTkScrollableFrame(self, width=500)
+        self.controls_frame.grid(row=6, column=0, columnspan=2, sticky="ns", padx=pad, pady=pad)
 
         self.grid_rowconfigure(6, weight=1)
 
@@ -523,19 +520,86 @@ class BindingsFrame(customtkinter.CTkFrame):
 
         self.selected_device = None
 
+        self.selected_category = None
+
+        self.controls = dict()
+
         self.diff = Diff()
 
         if not profiles_found:
-            self.after(100, self.show_path_popup)
+            self.after(100, self.show_settings_popup)
         elif self.dpm.dcs_config_version != self.dpm.get_dcs_version():
             self.after(100, self.show_path_popup)
         else:
             self.update_aircraftlist()
 
-    def show_path_popup(self):
+    def show_keybind_popup(self, control):
+
+        def close():
+            self.popup.destroy()
+
+        def bind(command, key):
+            self.diff.add_diff(command, key)
+            self.populate_controls_list()
+            close()
+
+        # def done():
+        #     self.populate_controls_list()
+        #     close()
+
+        def switch_category(choice=None):
+            if not choice:
+                choice = self.selected_category
+            commandlist = self.dpm.get_commands_for_aircraft_and_category(
+                aircraft=self.aircraft_combobox.get(),
+                category=choice
+            )
+            for child in bindings_frame.winfo_children():
+                child.destroy()
+            for i, command in enumerate(sorted(commandlist, key=lambda c: c.name)):
+                btn = customtkinter.CTkButton(
+                    master=bindings_frame,
+                    text=command.name,
+                    command=lambda cmd=command, key=control.raw_name: bind(cmd, key)
+                )
+                btn.grid(row=i, column=0, sticky="ew", padx=pad, pady=pad)
+            self.selected_category = choice
+
+        if self.popup is None or not self.popup.winfo_exists():
+            self.popup = customtkinter.CTkToplevel(self)
+        else:
+            self.popup.focus()
+        self.popup.geometry(f"+{self.winfo_x() + 30}+{self.winfo_y() + 200}")
+        self.popup.title(f"Configure command for {control.raw_name}")
+        self.popup.after(100,
+                         self.popup.lift)
+
+        category_label = customtkinter.CTkLabel(self.popup, text="Category")
+        category_label.grid(row=0, column=0, sticky="w", padx=pad, pady=pad)
+        category_combobox = customtkinter.CTkComboBox(
+            self.popup,
+            values=sorted(list(self.dpm.get_categories_for_aircraft(self.aircraft_combobox.get()))),
+            command=switch_category,
+        )
+        category_combobox.grid(row=0, column=1, sticky="ew", padx=pad, pady=pad)
+
+        bindings = dict()
+        bindings_frame = customtkinter.CTkScrollableFrame(self.popup, width=500)
+        bindings_frame.grid(row=1, column=0, columnspan=2, sticky="ns", padx=pad, pady=pad)
+
+        # done_btn = customtkinter.CTkButton(
+        #     master=self.popup,
+        #     text="Done",
+        #     command=done,
+        # )
+        # done_btn.grid(row=2, column=0, columnspan=2)
+
+        switch_category()
+
+    def show_settings_popup(self):
         def load():
-            self.dcs_path_selector.path.set(dcs_path_selector.path.get())
-            self.dcs_savegames_path_selector.path.set(dcs_savegames_path_selector.path.get())
+            self.dpm.set_dcs_path(dcs_path_selector.path.get())
+            self.dpm.set_dcs_savegames_path(dcs_savegames_path_selector.path.get())
             self.load_profiles()
             self.popup.destroy()
 
@@ -550,7 +614,7 @@ class BindingsFrame(customtkinter.CTkFrame):
             self.popup.title(f"Configure DCS Paths")
 
             label = customtkinter.CTkLabel(self.popup,
-                                           text="Your DCS profiles config is not up to date! Please specify paths and reload!")
+                                           text="Please specify DCS paths")
             label.grid(row=0, column=0, columnspan=2, sticky="ew")
 
             dcs_path_selector = PathSelector(self.popup, path=find_dcs_install_path(), title="DCS path")
@@ -560,7 +624,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                                                        title="DCS Saved Games path")
             dcs_savegames_path_selector.grid(row=2, column=0, columnspan=2, sticky="ew")
 
-            load_profiles_button = customtkinter.CTkButton(self.popup, text="Load data from DCS", command=load)
+            load_profiles_button = customtkinter.CTkButton(self.popup, text="Save settings", command=load)
             load_profiles_button.grid(row=3, column=0, columnspan=2)
 
             back_on_top()
@@ -569,7 +633,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         path = filedialog.askopenfilename(
             title='Select path',
             filetypes=self.filetypes,
-            initialdir=self.dcs_savegames_path_selector.path.get(),
+            initialdir=self.dpm.dcs_savegames_path,
         )
         if self.diff.unsaved_changes:
             ans = messagebox.askokcancel(
@@ -581,13 +645,12 @@ class BindingsFrame(customtkinter.CTkFrame):
                 return
         self.diff.clear()
         self.diff.load_from_file(path)
-        self.switch_category(self.category_combobox.get())
 
     def export_file(self):
         path = filedialog.asksaveasfilename(
             title='Select path',
             filetypes=self.filetypes,
-            initialdir=self.dcs_savegames_path_selector.path.get(),
+            initialdir=self.dpm.dcs_savegames_path,
         )
         if not path.endswith(".diff.lua"):
             path += ".diff.lua"
@@ -604,7 +667,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                 return
         aircraftname = self.aircraft_combobox.get()
         path = os.path.join(
-            self.dcs_savegames_path_selector.path.get(),
+            self.dpm.dcs_savegames_path,
             "Config",
             "Input",
             self.dpm.profiles[aircraftname]["aircraftname"],
@@ -622,7 +685,7 @@ class BindingsFrame(customtkinter.CTkFrame):
     def export_dcs(self):
         aircraftname = self.aircraft_combobox.get()
         path = os.path.join(
-            self.dcs_savegames_path_selector.path.get(),
+            self.dpm.dcs_savegames_path,
             "Config",
             "Input",
             self.dpm.profiles[aircraftname]["aircraftname"],
@@ -682,8 +745,6 @@ class BindingsFrame(customtkinter.CTkFrame):
         logging.info(f"Switchology profile stored to \"{path}\"")
 
     def load_profiles(self):
-        self.dpm.set_dcs_path(self.dcs_path_selector.path.get())
-        self.dpm.set_dcs_savegames_path(self.dcs_savegames_path_selector.path.get())
         self.dpm.scan_for_profiles()
         self.dpm.store_profiles(appdata_path)
         self.update_aircraftlist()
@@ -711,14 +772,42 @@ class BindingsFrame(customtkinter.CTkFrame):
                 return
         self.diff.clear(reset_unsaved_changes=True)
         self.last_aircraft_choice = choice
-        categorylist = sorted(list(self.dpm.get_categories_for_aircraft(choice)))
-        self.category_combobox.configure(
-            values=categorylist,
-            state="readonly"
-        )
-        self.category_combobox.set(categorylist[0])
-        self.category_combobox.update()
-        self.switch_category(categorylist[0])
+        self.selected_category = list(self.dpm.get_categories_for_aircraft(self.aircraft_combobox.get()))[0]
+        self.controls.clear()
+        self.populate_controls_list()
+
+    def populate_controls_list(self):
+        for child in self.controls_frame.winfo_children():
+            child.destroy()
+        if self.selected_device is None:
+            return
+        for i, control in enumerate(self.selected_device.controls):
+            self.controls[control] = None
+            for command, keys in self.diff.key_diffs.items():
+                if control.raw_name in keys:
+                    self.controls[control] = command
+                    break
+            indicator = ControlIndicator(self.controls_frame, control)
+            self.selected_device.add_subscriber(control, indicator.update_value)
+            indicator.grid(row=i, column=0, sticky="w", padx=pad, pady=pad)
+
+            button = customtkinter.CTkButton(
+                master=self.controls_frame,
+                text="\u21c4",
+                command=lambda c=control: self.show_keybind_popup(c),
+                width=30
+            )
+            button.grid(row=i, column=1, sticky="w", padx=pad, pady=pad)
+
+            binding = customtkinter.CTkLabel(
+                master=self.controls_frame,
+                text=self.controls[control],
+                justify="left",
+                wraplength=360,
+            )
+            binding.grid(row=i, column=2, sticky="w", padx=pad, pady=pad)
+
+
 
     def switch_category(self, choice):
         commandlist = self.dpm.get_commands_for_aircraft_and_category(
