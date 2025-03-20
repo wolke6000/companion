@@ -529,7 +529,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         if not profiles_found:
             self.after(100, self.show_settings_popup)
         elif self.dpm.dcs_config_version != self.dpm.get_dcs_version():
-            self.after(100, self.show_path_popup)
+            self.load_profiles()
         else:
             self.update_aircraftlist()
 
