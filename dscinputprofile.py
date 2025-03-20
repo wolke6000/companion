@@ -772,6 +772,8 @@ class BindingsFrame(customtkinter.CTkFrame):
 
     def populate_controls_list(self):
         for child in self.controls_frame.winfo_children():
+            if issubclass(type(child), ControlIndicator):
+                self.selected_device.unsubscribe(fun=child.update_value)
             child.destroy()
         if self.selected_device is None:
             return
