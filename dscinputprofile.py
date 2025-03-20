@@ -8,8 +8,8 @@ import os
 import winreg
 import customtkinter
 from tkinter import filedialog, messagebox
-from pyglet.input.base import Button, AbsoluteAxis
 
+import Switchology
 from Device import Device, ControlIndicator
 from gui import GUI, appdata_path, PathSelector
 
@@ -653,6 +653,8 @@ class BindingsFrame(customtkinter.CTkFrame):
             filetypes=self.filetypes,
             initialdir=self.dpm.dcs_savegames_path,
         )
+        if not os.path.isfile(path):
+            return
         if self.diff.unsaved_changes:
             ans = messagebox.askokcancel(
                 "Warning",
@@ -670,6 +672,8 @@ class BindingsFrame(customtkinter.CTkFrame):
             filetypes=self.filetypes,
             initialdir=self.dpm.dcs_savegames_path,
         )
+        if not os.path.isfile(path):
+            return
         if not path.endswith(".diff.lua"):
             path += ".diff.lua"
         self.diff.store_to_file(path)
@@ -727,11 +731,14 @@ class BindingsFrame(customtkinter.CTkFrame):
             title='Select path',
             filetypes=[("Switchology profile", ".swpf")],
         )
+        if not os.path.isfile(path):
+            return
         with open(path, "r") as f:
             loaddict = json.load(f)
-        if loaddict.get("build_id", "") != self.selected_device.build_id:
-            logging.error(f"Selected device's build id \"{self.selected_device.build_id}\" does not match the profile's build id \"{loaddict.get('build_id', '')}\"")
-            return
+        if isinstance(self.selected_device, Switchology.SwitchologyDevice):
+            if loaddict.get("build_id", "") != self.selected_device.build_id:
+                logging.error(f"Selected device's build id \"{self.selected_device.build_id}\" does not match the profile's build id \"{loaddict.get('build_id', '')}\"")
+                return
         dcsdiff = loaddict.get("DCSdiff", None)
         if dcsdiff is None:
             logging.error(f"The file does not contain a DCS profile!")
@@ -753,6 +760,8 @@ class BindingsFrame(customtkinter.CTkFrame):
             title='Select path',
             filetypes=[("Switchology profile", ".swpf")],
         )
+        if not os.path.isfile(path):
+            return
         if not path.endswith(".swpf"):
             path += ".swpf"
         storedict = self.selected_device.get_settings_dict()
