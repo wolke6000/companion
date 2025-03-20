@@ -189,10 +189,19 @@ class Device:
         for subscriber_key in self.subscribers.keys():
             self.subscribers[subscriber_key].clear()
 
-    def unsubscribe(self, control, fun):
-        for control in self.subscribers.keys():
-            if fun in self.subscribers[control]:
-                self.subscribers[control].remove(fun)
+    def unsubscribe(self, control=None, fun=None):
+        if control is None and fun is not None:
+            for ctrl in self.controls:
+                if fun in self.subscribers[ctrl]:
+                    self.subscribers[ctrl].remove(fun)
+            return
+        if control not in self.subscribers.keys():
+            return
+        if fun is None:
+            self.subscribers[control].clear()
+        if fun in self.subscribers[control]:
+            self.subscribers[control].remove(fun)
+
 
     def open(self):
         for control in self.get_controls():
