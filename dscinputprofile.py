@@ -248,6 +248,12 @@ class Diff:
             return
         diffs[command] = list()
 
+    def clear_key(self, key):
+        self.unsaved_changes = True
+        for command, keys in self.key_diffs.items():
+            if key in keys:
+                keys.remove(key)
+
     def get_key_for_command(self, command: Command):
         if isinstance(command, KeyCommand):
             diffs = self.key_diffs
@@ -542,6 +548,7 @@ class BindingsFrame(customtkinter.CTkFrame):
             self.popup.destroy()
 
         def bind(command, key):
+            self.diff.clear_key(key)
             self.diff.add_diff(command, key)
             self.populate_controls_list()
             close()
