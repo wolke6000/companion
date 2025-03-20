@@ -521,6 +521,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.selected_device = None
 
         self.selected_category = None
+        self.command_filter_str = ""
 
         self.controls = dict()
 
@@ -536,6 +537,8 @@ class BindingsFrame(customtkinter.CTkFrame):
     def show_keybind_popup(self, control):
 
         def close():
+            self.command_filter_str = command_filter_var.get()
+            command_filter_var.trace_remove("write", cb_name)
             self.popup.destroy()
 
         def bind(command, key):
@@ -546,49 +549,63 @@ class BindingsFrame(customtkinter.CTkFrame):
         def switch_category(choice=None):
             if not choice:
                 choice = self.selected_category
-            commandlist = self.dpm.get_commands_for_aircraft_and_category(
-                aircraft=self.aircraft_combobox.get(),
-                category=choice
-            )
+            if choice == all_categories_str:
+                commandlist = list()
+                for cat in self.dpm.get_categories_for_aircraft(self.aircraft_combobox.get()):
+                    commandlist += self.dpm.get_commands_for_aircraft_and_category(
+                        aircraft=self.aircraft_combobox.get(),
+                        category=cat
+                    )
+            else:
+                commandlist = self.dpm.get_commands_for_aircraft_and_category(
+                    aircraft=self.aircraft_combobox.get(),
+                    category=choice
+                )
             for child in bindings_frame.winfo_children():
                 child.destroy()
-            for i, command in enumerate(sorted(commandlist, key=lambda c: c.name)):
+            i = 0
+            for command in sorted(commandlist, key=lambda c: c.name):
+                if command_filter_var.get().lower() not in command.name.lower():
+                    continue
                 btn = customtkinter.CTkButton(
                     master=bindings_frame,
                     text=command.name,
                     command=lambda cmd=command, key=control.raw_name: bind(cmd, key)
                 )
                 btn.grid(row=i, column=0, sticky="ew", padx=pad, pady=pad)
+                i += 1
             self.selected_category = choice
+            bindings_frame._parent_canvas.yview_moveto(0.0)
 
+        def filter_commands(a, b, c):
+            switch_category()
+
+        all_categories_str = "all categories"
         if self.popup is None or not self.popup.winfo_exists():
             self.popup = customtkinter.CTkToplevel(self)
         self.popup.geometry(f"+{self.winfo_rootx() - 50}+{self.winfo_rooty() + 200}")
         self.popup.title(f"Configure command for {control.raw_name}")
-        self.popup.after(100,
-                         self.popup.lift)
+        self.popup.after(100, self.popup.lift)
         self.popup.focus()
-
-        category_label = customtkinter.CTkLabel(self.popup, text="Category", width=30)
-        category_label.grid(row=0, column=0, sticky="w", padx=pad, pady=pad)
+        if self.selected_category is None:
+            self.selected_category = all_categories_str
         category_combobox = customtkinter.CTkComboBox(
             self.popup,
-            values=sorted(list(self.dpm.get_categories_for_aircraft(self.aircraft_combobox.get()))),
+            values=[all_categories_str] + sorted(list(self.dpm.get_categories_for_aircraft(self.aircraft_combobox.get()))),
             command=switch_category,
         )
-        category_combobox.grid(row=0, column=1, sticky="ew", padx=pad, pady=pad)
-
+        category_combobox.set(all_categories_str)
+        category_combobox.grid(row=0, column=0, sticky="ew", padx=pad, pady=pad)
+        command_filter_var = customtkinter.StringVar(value=self.command_filter_str)
+        cb_name = command_filter_var.trace_add("write", filter_commands)
+        command_filter_entry = customtkinter.CTkEntry(
+            master=self.popup,
+            textvariable=command_filter_var,
+        )
+        command_filter_entry.grid(row=0, column=1, padx=pad, pady=pad)
         bindings_frame = customtkinter.CTkScrollableFrame(self.popup, width=250)
         bindings_frame.grid(row=1, column=0, columnspan=2, sticky="ns", padx=pad, pady=pad)
-
-        # done_btn = customtkinter.CTkButton(
-        #     master=self.popup,
-        #     text="Done",
-        #     command=done,
-        # )
-        # done_btn.grid(row=2, column=0, columnspan=2)
-
-        switch_category()
+        switch_category(all_categories_str)
 
     def show_settings_popup(self):
         def load():
