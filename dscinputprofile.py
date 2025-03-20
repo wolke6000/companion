@@ -746,7 +746,6 @@ class BindingsFrame(customtkinter.CTkFrame):
                 return
         self.diff.clear()
         self.diff.from_dict(dcsdiff)
-        self.switch_category(self.category_combobox.get())
         logging.info(f"Switchology profile loaded from \"{path}\"")
 
     def export_switchology(self):
@@ -826,94 +825,6 @@ class BindingsFrame(customtkinter.CTkFrame):
                 wraplength=360,
             )
             binding.grid(row=i, column=2, sticky="w", padx=pad, pady=pad)
-
-
-
-    def switch_category(self, choice):
-        commandlist = self.dpm.get_commands_for_aircraft_and_category(
-            aircraft=self.aircraft_combobox.get(),
-            category=choice
-        )
-        for child in self.bindings_frame.winfo_children():
-            child.destroy()
-        for i, command in enumerate(sorted(commandlist, key=lambda c: c.name)):
-            label = customtkinter.CTkLabel(self.bindings_frame, text=command.name, wraplength=360, justify='left')
-            label.grid(row=i, column=0, sticky="w")
-            typelabel = customtkinter.CTkLabel(self.bindings_frame,text=command.type().replace("Command", ""))
-            typelabel.grid(row=i, column=1, sticky="w")
-            bindings = customtkinter.CTkLabel(
-                self.bindings_frame,
-                text="\n".join(self.diff.get_key_for_command(command)),
-                width=100
-            )
-            bindings.grid(row=i, column=2)
-            self.bindings_frame.grid_columnconfigure(0, weight=1)
-            button = customtkinter.CTkButton(self.bindings_frame, text="Edit", width=20,
-                                             command=lambda x=command: self.show_binding_popup(x))
-            button.grid(row=i, column=3)
-
-    def show_binding_popup(self, command):
-
-        def clear():
-            bindings.clear()
-            update_text()
-
-        def close():
-            self.selected_device.unsubscribe("all", func)
-            self.popup.destroy()
-
-        def done():
-            self.diff.clear_command(command)
-            for key in bindings:
-                self.diff.add_diff(command, key)
-            self.switch_category(self.category_combobox.get())
-            close()
-
-        def button_pressed(device, control, value):
-            if "Key" in command.type() and not isinstance(control, Button):
-                return
-            if not value:
-                return
-            if self.popup is None or not self.popup.winfo_exists():
-                return
-            bindings.add(control.raw_name)
-            update_text()
-
-        def update_text():
-            text.configure(state="normal")
-            text.delete("0.0", "end")
-            text.insert("end", f"; ".join(list(bindings)))
-            text.update()
-            text.configure(state="disabled")
-
-        aircraft = self.aircraft_combobox.get()
-        category = self.category_combobox.get()
-
-        if self.popup is None or not self.popup.winfo_exists():
-            self.popup = customtkinter.CTkToplevel(self)
-            self.popup.title(f"{aircraft} - {category} - {command.name}")
-            self.popup.after(100,
-                             self.popup.lift)  # Workaround for bug where main window takes focus from https://github.com/kelltom/OS-Bot-COLOR/blob/3c61fbec9ae8fffd15f2ce66158e176cff2be045/src/OSBC.py#L227C41-L228C1
-
-            bindings = set(self.diff.get_key_for_command(command))
-
-            label = customtkinter.CTkLabel(self.popup, text="Push some button to bind")
-            label.grid(row=0, column=0, columnspan=3, padx=5, pady=5)
-
-            text = customtkinter.CTkTextbox(self.popup, state="disabled")
-            text.grid(row=1, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
-
-            clear_button = customtkinter.CTkButton(self.popup, text="Clear", command=clear)
-            clear_button.grid(row=2, column=0, padx=5, pady=5)
-            cancel_button = customtkinter.CTkButton(self.popup, text="Cancel", command=close)
-            cancel_button.grid(row=2, column=1, padx=5, pady=5)
-            done_button = customtkinter.CTkButton(self.popup, text="Done", command=done)
-            done_button.grid(row=2, column=2, padx=5, pady=5)
-
-            update_text()
-            if self.selected_device:
-                func = lambda ctrl, value, device=self.selected_device: button_pressed(device, ctrl, value)
-                self.selected_device.add_subscriber("all", func)
 
 
 def main():
