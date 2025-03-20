@@ -689,7 +689,7 @@ class BindingsFrame(customtkinter.CTkFrame):
             if self.selected_device.instance_guid.lower() in filename.lower():
                 self.diff.clear()
                 self.diff.load_from_file(os.path.join(path, filename))
-                self.switch_category(self.category_combobox.get())
+                self.populate_controls_list()
                 return
         logging.warning(f"no input profile found for \"{self.selected_device}\" and \"{aircraftname}\"")
 
