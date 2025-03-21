@@ -592,19 +592,27 @@ class BindingsFrame(customtkinter.CTkFrame):
             self.populate_controls_list()
             close()
 
+        def switch_aircraft(choice):
+            self.last_aircraft_choice = choice
+            configlist = sorted(list(self.dpm.get_categories_for_aircraft(choice)))
+            category_selection.configure(
+                values=[all_categories_str] + configlist,
+            )
+            switch_category(all_categories_str)
+
         def switch_category(choice=None):
             if not choice:
                 choice = self.selected_category
             if choice == all_categories_str:
                 commandlist = list()
-                for cat in self.dpm.get_categories_for_aircraft(self.aircraft_selection.get()):
+                for cat in self.dpm.get_categories_for_aircraft(aircraft_selection.get()):
                     commandlist += self.dpm.get_commands_for_aircraft_and_category(
                         aircraft=self.aircraft_selection.get(),
                         category=cat
                     )
             else:
                 commandlist = self.dpm.get_commands_for_aircraft_and_category(
-                    aircraft=self.aircraft_selection.get(),
+                    aircraft=aircraft_selection.get(),
                     category=choice
                 )
             for child in bindings_frame.winfo_children():
@@ -633,24 +641,30 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.popup.title(f"Configure command for {control.raw_name}")
         self.popup.after(100, self.popup.lift)
         self.popup.focus()
+        aircraft_selection = customtkinter.CTkOptionMenu(
+            master=self.popup,
+            values=sorted(list(self.dpm.get_aircrafts())),
+            command=switch_aircraft,
+        )
+        aircraft_selection.grid(row=0, column=0, sticky="ew", padx=pad, pady=pad)
         if self.selected_category is None:
             self.selected_category = all_categories_str
         category_selection = customtkinter.CTkOptionMenu(
-            self.popup,
-            values=[all_categories_str] + sorted(list(self.dpm.get_categories_for_aircraft(self.aircraft_selection.get()))),
+            master=self.popup,
+            values=[all_categories_str] + sorted(list(self.dpm.get_categories_for_aircraft(self.last_aircraft_choice))),
             command=switch_category,
         )
         category_selection.set(all_categories_str)
-        category_selection.grid(row=0, column=0, sticky="ew", padx=pad, pady=pad)
+        category_selection.grid(row=0, column=1, sticky="ew", padx=pad, pady=pad)
         command_filter_var = customtkinter.StringVar(value=self.command_filter_str)
         cb_name = command_filter_var.trace_add("write", filter_commands)
         command_filter_entry = customtkinter.CTkEntry(
             master=self.popup,
             textvariable=command_filter_var,
         )
-        command_filter_entry.grid(row=0, column=1, padx=pad, pady=pad)
-        bindings_frame = customtkinter.CTkScrollableFrame(self.popup, width=250)
-        bindings_frame.grid(row=1, column=0, columnspan=2, sticky="ns", padx=pad, pady=pad)
+        command_filter_entry.grid(row=0, column=2, padx=pad, pady=pad)
+        bindings_frame = customtkinter.CTkScrollableFrame(self.popup, width=350)
+        bindings_frame.grid(row=1, column=0, columnspan=3, sticky="ns", padx=pad, pady=pad)
         switch_category(all_categories_str)
 
     def show_settings_popup(self):
