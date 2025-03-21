@@ -489,13 +489,13 @@ class BindingsFrame(customtkinter.CTkFrame):
 
         self.aircraft_label = customtkinter.CTkLabel(self, text="Aircraft")
         self.aircraft_label.grid(row=4, column=0, sticky="w", padx=pad, pady=pad)
-        self.aircraft_combobox = customtkinter.CTkComboBox(
+        self.aircraft_selection = customtkinter.CTkOptionMenu(
             self,
             values=[],
             state="disabled",
             command=self.switch_aircraft,
         )
-        self.aircraft_combobox.grid(row=4, column=1, sticky="ew", padx=pad, pady=pad)
+        self.aircraft_selection.grid(row=4, column=1, sticky="ew", padx=pad, pady=pad)
         self.last_aircraft_choice = None
 
         self.controls_frame = customtkinter.CTkScrollableFrame(self, width=500)
@@ -558,14 +558,14 @@ class BindingsFrame(customtkinter.CTkFrame):
                 choice = self.selected_category
             if choice == all_categories_str:
                 commandlist = list()
-                for cat in self.dpm.get_categories_for_aircraft(self.aircraft_combobox.get()):
+                for cat in self.dpm.get_categories_for_aircraft(self.aircraft_selection.get()):
                     commandlist += self.dpm.get_commands_for_aircraft_and_category(
-                        aircraft=self.aircraft_combobox.get(),
+                        aircraft=self.aircraft_selection.get(),
                         category=cat
                     )
             else:
                 commandlist = self.dpm.get_commands_for_aircraft_and_category(
-                    aircraft=self.aircraft_combobox.get(),
+                    aircraft=self.aircraft_selection.get(),
                     category=choice
                 )
             for child in bindings_frame.winfo_children():
@@ -596,13 +596,13 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.popup.focus()
         if self.selected_category is None:
             self.selected_category = all_categories_str
-        category_combobox = customtkinter.CTkComboBox(
+        category_selection = customtkinter.CTkOptionMenu(
             self.popup,
-            values=[all_categories_str] + sorted(list(self.dpm.get_categories_for_aircraft(self.aircraft_combobox.get()))),
+            values=[all_categories_str] + sorted(list(self.dpm.get_categories_for_aircraft(self.aircraft_selection.get()))),
             command=switch_category,
         )
-        category_combobox.set(all_categories_str)
-        category_combobox.grid(row=0, column=0, sticky="ew", padx=pad, pady=pad)
+        category_selection.set(all_categories_str)
+        category_selection.grid(row=0, column=0, sticky="ew", padx=pad, pady=pad)
         command_filter_var = customtkinter.StringVar(value=self.command_filter_str)
         cb_name = command_filter_var.trace_add("write", filter_commands)
         command_filter_entry = customtkinter.CTkEntry(
@@ -687,7 +687,7 @@ class BindingsFrame(customtkinter.CTkFrame):
             )
             if not ans:
                 return
-        aircraftname = self.aircraft_combobox.get()
+        aircraftname = self.aircraft_selection.get()
         path = os.path.join(
             self.dpm.dcs_savegames_path,
             "Config",
@@ -705,7 +705,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         logging.warning(f"no input profile found for \"{self.selected_device}\" and \"{aircraftname}\"")
 
     def export_dcs(self):
-        aircraftname = self.aircraft_combobox.get()
+        aircraftname = self.aircraft_selection.get()
         path = os.path.join(
             self.dpm.dcs_savegames_path,
             "Config",
@@ -777,12 +777,12 @@ class BindingsFrame(customtkinter.CTkFrame):
 
     def update_aircraftlist(self):
         aircraftlist = sorted(list(self.dpm.get_aircrafts()))
-        self.aircraft_combobox.configure(
+        self.aircraft_selection.configure(
             values=aircraftlist,
             state="readonly"
         )
-        self.aircraft_combobox.set(aircraftlist[0])
-        self.aircraft_combobox.update()
+        self.aircraft_selection.set(aircraftlist[0])
+        self.aircraft_selection.update()
         self.switch_aircraft(aircraftlist[0])
 
     def switch_aircraft(self, choice):
@@ -793,12 +793,12 @@ class BindingsFrame(customtkinter.CTkFrame):
                 parent=self
             )
             if not ans:
-                self.aircraft_combobox.set(self.last_aircraft_choice)
-                self.aircraft_combobox.update()
+                self.aircraft_selection.set(self.last_aircraft_choice)
+                self.aircraft_selection.update()
                 return
         self.diff.clear(reset_unsaved_changes=True)
         self.last_aircraft_choice = choice
-        self.selected_category = list(self.dpm.get_categories_for_aircraft(self.aircraft_combobox.get()))[0]
+        self.selected_category = list(self.dpm.get_categories_for_aircraft(self.aircraft_selection.get()))[0]
         self.controls.clear()
         self.populate_controls_list()
 
