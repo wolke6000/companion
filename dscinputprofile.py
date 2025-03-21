@@ -84,7 +84,7 @@ def lua_to_py(luatable):
         extra_categories = list()  # workaround for commands with two categories
         for dkey in ds.keys():
             if isinstance(dkey, int):
-                extra_categories.append(ds[dkey])
+                extra_categories.append(ds[str(dkey)])
             else:
                 dso[dkey] = lua_to_py(ds[dkey])
         if len(extra_categories) > 0:
@@ -386,13 +386,13 @@ class DCSProfileManager:
         return True
 
     def scan_for_profiles(self):
-        def scandir(path):
+        def scan_mods_aircraft_dir(path):
             if not os.path.isdir(path):
                 raise NotADirectoryError
             for p in os.listdir(path):
                 subpath = os.path.join(path, p)
                 if os.path.isdir(subpath):
-                    scandir(subpath)
+                    scan_mods_aircraft_dir(subpath)
                 elif os.path.isfile(subpath):
                     if os.path.basename(subpath) == 'entry.lua':
                         foundpath = os.path.dirname(subpath)
@@ -402,7 +402,7 @@ class DCSProfileManager:
                                 foundpath = inputprofiles[aircraftname]
                                 with open(os.path.join(foundpath, 'name.lua'), "r") as f:
                                     aircraftname_pretty = f.readline().split("'")[1].strip()
-                                logging.debug(f"found aircraft controls for \"{aircraftname}\" in \"{foundpath}\"")
+                                logging.debug(f"found aircraft controls for \"{aircraftname_pretty}\" in \"{foundpath}\"")
                                 result = load_device_profile_from_file(
                                     os.path.join(foundpath, 'joystick', 'default.lua'),
                                     None,
@@ -418,7 +418,40 @@ class DCSProfileManager:
                         except Exception as e:
                             logging.debug(f"Exception when loading from {foundpath}: {e}")
 
-        scandir(os.path.join(self.dcs_path, 'Mods', 'aircraft'))
+        def scan_config_input_dir(path):
+            if not os.path.isdir(path):
+                raise NotADirectoryError
+            for p in os.listdir(path):
+                subpath = os.path.join(path, p)
+                if os.path.isdir(subpath):
+                    scan_config_input_dir(subpath)
+                elif os.path.isfile(subpath) and p == "name.lua":
+                    foundpath = os.path.dirname(subpath)
+                    aircraftname = os.path.basename(foundpath)
+                    with open(os.path.join(foundpath, 'name.lua'), "r") as f:
+                        for line in f.readlines():
+                            if line.startswith("return"):
+                                aircraftname_pretty = line.split("'")[1].strip()
+                                break
+                    logging.debug(f"found aircraft controls for \"{aircraftname_pretty}\" in \"{foundpath}\"")
+                    default_lua_path = os.path.join(foundpath, 'joystick', 'default.lua')
+                    if not os.path.isfile(default_lua_path):
+                        return
+                    result = load_device_profile_from_file(
+                        default_lua_path,
+                        None,
+                        os.path.join(foundpath, r'joystick\\'),
+                        None,
+                        self.dcs_path
+                    )
+                    if isinstance(result, str):
+                        logging.error(f"could not load aircraft controls: {result}")
+                    else:
+                        result["aircraftname"] = aircraftname
+                        self.profiles[aircraftname_pretty] = result
+
+        scan_mods_aircraft_dir(os.path.join(self.dcs_path, 'Mods', 'aircraft'))
+        scan_config_input_dir(os.path.join(self.dcs_path, 'Config', 'Input'))
 
     def get_aircrafts(self):
         return self.profiles.keys()
@@ -427,7 +460,10 @@ class DCSProfileManager:
         categories = set()
         if aircraft not in self.profiles.keys():
             return KeyError
-        for mylist in [self.profiles[aircraft]["axisCommands"], self.profiles[aircraft]["keyCommands"]]:
+        for commands_list in ["axisCommands", "keyCommands"]:
+            if commands_list not in self.profiles[aircraft].keys():
+                continue
+            mylist = self.profiles[aircraft][commands_list]
             for command in mylist:
                 if "category" in command.keys():
                     category = command["category"]
@@ -443,10 +479,13 @@ class DCSProfileManager:
             return KeyError
         if category not in self.get_categories_for_aircraft(aircraft):
             return KeyError
-        for mylist, commandclass in [
-            (self.profiles[aircraft]["axisCommands"], AxisCommand),
-            (self.profiles[aircraft]["keyCommands"], KeyCommand),
+        for commands_list, commandclass in [
+            ("axisCommands", AxisCommand),
+            ("keyCommands", KeyCommand),
         ]:
+            if commands_list not in self.profiles[aircraft].keys():
+                continue
+            mylist = self.profiles[aircraft][commands_list]
             for command in mylist:
                 if "category" in command.keys():
                     cat = command["category"]
