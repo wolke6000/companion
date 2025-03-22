@@ -854,10 +854,14 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.dpm.store_profiles(appdata_path)
 
     def populate_controls_list(self):
-        for child in self.controls_frame.winfo_children():
-            if issubclass(type(child), ControlIndicator):
-                self.selected_device.unsubscribe(fun=child.update_value)
-            child.destroy()
+        def destroy_children(widget):
+            for child in widget.winfo_children():
+                if issubclass(type(child), ControlIndicator):
+                    self.selected_device.unsubscribe(fun=child.update_value)
+                destroy_children(child)
+                child.destroy()
+
+        destroy_children(self.controls_frame)
         if self.selected_device is None:
             return
         for i, control in enumerate(self.selected_device.controls):
