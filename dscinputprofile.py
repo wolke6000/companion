@@ -526,23 +526,12 @@ class BindingsFrame(customtkinter.CTkFrame):
         )
         self.settings_button.grid(row=1, column=1, padx=pad, pady=pad)
 
-        self.aircraft_label = customtkinter.CTkLabel(self, text="Aircraft")
-        self.aircraft_label.grid(row=4, column=0, sticky="w", padx=pad, pady=pad)
-        self.aircraft_selection = customtkinter.CTkOptionMenu(
-            self,
-            values=[],
-            state="disabled",
-            command=self.switch_aircraft,
-        )
-        self.aircraft_selection.grid(row=4, column=1, sticky="ew", padx=pad, pady=pad)
-        self.last_aircraft_choice = None
-
         self.controls_frame = customtkinter.CTkScrollableFrame(self, width=500)
         self.controls_frame.grid(row=6, column=0, columnspan=2, sticky="ns", padx=pad, pady=pad)
 
         self.grid_rowconfigure(6, weight=1)
 
-        self.load_from_savegames_button = customtkinter.CTkButton(self, text="Load your DCS control settings\nfor this device and airplane",
+        self.load_from_savegames_button = customtkinter.CTkButton(self, text="Load your DCS control settings\nfor this device",
                                                                   command=self.import_dcs)
         self.load_from_savegames_button.grid(row=7, column=0, sticky="ew", padx=pad, pady=pad)
         self.load_from_profile_button = customtkinter.CTkButton(self, text="Load a DCS profile file (*.diff.lua)",
@@ -551,7 +540,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.load_switchology_profile_button = customtkinter.CTkButton(self, text="Load a Switchology profile file (*.swpf)",
                                                                        command=self.import_switchology)
         self.load_switchology_profile_button.grid(row=9, column=0, sticky="ew", padx=pad, pady=pad)
-        self.save_to_savegames_button = customtkinter.CTkButton(self, text="Push into DCS control settings",
+        self.save_to_savegames_button = customtkinter.CTkButton(self, text="Push to DCS",
                                                                 command=self.export_dcs)
         self.save_to_savegames_button.grid(row=7, column=1, sticky="ew", padx=pad, pady=pad)
         self.save_to_profile_button = customtkinter.CTkButton(self, text="Save as DCS profile file (*.diff.lua)",
@@ -564,20 +553,18 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.popup = None
 
         self.selected_device = None
-
+        self.last_aircraft_choice = sorted(list(self.dpm.get_aircrafts()))[0]
         self.selected_category = None
         self.command_filter_str = ""
 
         self.controls = dict()
 
-        self.diff = Diff()
+        self.diffs = dict()
 
         if not profiles_found:
             self.after(100, self.show_settings_popup)
         elif self.dpm.dcs_config_version != self.dpm.get_dcs_version():
             self.load_profiles()
-        else:
-            self.update_aircraftlist()
 
     def show_keybind_popup(self, control):
 
@@ -587,8 +574,10 @@ class BindingsFrame(customtkinter.CTkFrame):
             self.popup.destroy()
 
         def bind(command, key):
-            self.diff.clear_key(key)
-            self.diff.add_diff(command, key)
+            if aircraft_selection.get() not in self.diffs.keys():
+                self.diffs[aircraft_selection.get()] = Diff()
+            self.diffs[aircraft_selection.get()].clear_key(key)
+            self.diffs[aircraft_selection.get()].add_diff(command, key)
             self.populate_controls_list()
             close()
 
@@ -607,7 +596,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                 commandlist = list()
                 for cat in self.dpm.get_categories_for_aircraft(aircraft_selection.get()):
                     commandlist += self.dpm.get_commands_for_aircraft_and_category(
-                        aircraft=self.aircraft_selection.get(),
+                        aircraft=aircraft_selection.get(),
                         category=cat
                     )
             else:
@@ -732,7 +721,21 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.diff.store_to_file(path)
 
     def import_dcs(self):
-        if self.diff.unsaved_changes:
+
+        def load_from_file(a_name, a_path):
+            logging.debug(f"looking for input profile in {a_path}")
+            for filename in os.listdir(a_path):
+                if self.selected_device.instance_guid.lower() in filename.lower():
+                    if a_name in self.diffs.keys():
+                        self.diffs[a_name].clear()
+                    else:
+                        self.diffs[a_name] = Diff()
+                    self.diffs[a_name].load_from_file(os.path.join(a_path, filename))
+                    self.populate_controls_list()
+                    return
+            logging.debug(f"no input profile found for \"{self.selected_device}\" and \"{a_name}\"")
+
+        if any(diff.unsaved_changes for diff in self.diffs):
             ans = messagebox.askokcancel(
                 "Warning",
                 "Your profile has unsaved changes! If you continue, those will be lost!",
@@ -740,44 +743,49 @@ class BindingsFrame(customtkinter.CTkFrame):
             )
             if not ans:
                 return
-        aircraftname = self.aircraft_selection.get()
-        path = os.path.join(
+        config_input_path = os.path.join(
             self.dpm.dcs_savegames_path,
             "Config",
             "Input",
-            self.dpm.profiles[aircraftname]["aircraftname"],
-            "Joystick"
         )
-        logging.debug(f"looking for input profile in {path}")
-        for filename in os.listdir(path):
-            if self.selected_device.instance_guid.lower() in filename.lower():
-                self.diff.clear()
-                self.diff.load_from_file(os.path.join(path, filename))
-                self.populate_controls_list()
-                return
-        logging.warning(f"no input profile found for \"{self.selected_device}\" and \"{aircraftname}\"")
+        for aircraftname in os.listdir(config_input_path):
+            path = os.path.join(
+                config_input_path,
+                aircraftname,
+                "Joystick",
+            )
+            if not os.path.isdir(path):
+                continue
+            load_from_file(aircraftname, path)
 
     def export_dcs(self):
-        aircraftname = self.aircraft_selection.get()
-        path = os.path.join(
-            self.dpm.dcs_savegames_path,
-            "Config",
-            "Input",
-            self.dpm.profiles[aircraftname]["aircraftname"],
-            "Joystick"
-        )
-        if self.dpm.check_if_dcs_is_running():
-            messagebox.showwarning(
-                title="DCS appears to be running!",
-                message=f"You must restart DCS for changes to take effect!",
+
+        def store_to_file(path):
+            if not os.path.exists(path):
+                os.makedirs(path)
+            for filename in os.listdir(path):
+                if self.selected_device.instance_guid.lower() in filename.lower():
+                    diff.store_to_file(os.path.join(path, filename))
+                    return
+            # if there is no valid file there, create one
+            filename = str(self.selected_device)
+            diff.store_to_file(os.path.join(path, filename))
+
+        for aircraftname in self.diffs.keys():
+            diff = self.diffs[aircraftname]
+            path = os.path.join(
+                self.dpm.dcs_savegames_path,
+                "Config",
+                "Input",
+                self.dpm.profiles[aircraftname]["aircraftname"],
+                "Joystick"
             )
-        for filename in os.listdir(path):
-            if self.selected_device.instance_guid.lower() in filename.lower():
-                self.diff.store_to_file(os.path.join(path, filename))
-                return
-        # if there is no valid file there, create one
-        filename = str(self.selected_device)
-        self.diff.store_to_file(os.path.join(path, filename))
+            if self.dpm.check_if_dcs_is_running():
+                messagebox.showwarning(
+                    title="DCS appears to be running!",
+                    message=f"You must restart DCS for changes to take effect!",
+                )
+            store_to_file(path)
 
     def import_switchology(self):
         path = filedialog.askopenfilename(
@@ -826,34 +834,6 @@ class BindingsFrame(customtkinter.CTkFrame):
     def load_profiles(self):
         self.dpm.scan_for_profiles()
         self.dpm.store_profiles(appdata_path)
-        self.update_aircraftlist()
-
-    def update_aircraftlist(self):
-        aircraftlist = sorted(list(self.dpm.get_aircrafts()))
-        self.aircraft_selection.configure(
-            values=aircraftlist,
-            state="readonly"
-        )
-        self.aircraft_selection.set(aircraftlist[0])
-        self.aircraft_selection.update()
-        self.switch_aircraft(aircraftlist[0])
-
-    def switch_aircraft(self, choice):
-        if self.last_aircraft_choice and choice != self.last_aircraft_choice and self.diff.unsaved_changes:
-            ans = messagebox.askokcancel(
-                "Warning",
-                "Your profile has unsaved changes! If you continue, those will be lost!",
-                parent=self
-            )
-            if not ans:
-                self.aircraft_selection.set(self.last_aircraft_choice)
-                self.aircraft_selection.update()
-                return
-        self.diff.clear(reset_unsaved_changes=True)
-        self.last_aircraft_choice = choice
-        self.selected_category = list(self.dpm.get_categories_for_aircraft(self.aircraft_selection.get()))[0]
-        self.controls.clear()
-        self.populate_controls_list()
 
     def populate_controls_list(self):
         for child in self.controls_frame.winfo_children():
@@ -864,10 +844,14 @@ class BindingsFrame(customtkinter.CTkFrame):
             return
         for i, control in enumerate(self.selected_device.controls):
             self.controls[control] = None
-            for command, keys in self.diff.key_diffs.items():
-                if control.raw_name in keys:
-                    self.controls[control] = command
-                    break
+            command_name_list = list()
+            for aircraft in self.diffs.keys():
+                diff = self.diffs[aircraft]
+                for command, keys in diff.key_diffs.items():
+                    if control.raw_name in keys:
+                        self.controls[control] = command
+                        command_name_list.append(f"{aircraft}:{command.name}")
+                        # break
             indicator = ControlIndicator(self.controls_frame, control)
             self.selected_device.add_subscriber(control, indicator.update_value)
             indicator.grid(row=i, column=0, sticky="w", padx=pad, pady=pad)
@@ -882,7 +866,7 @@ class BindingsFrame(customtkinter.CTkFrame):
 
             binding = customtkinter.CTkLabel(
                 master=self.controls_frame,
-                text=self.controls[control],
+                text=", ".join(command_name_list),
                 justify="left",
                 wraplength=360,
             )
