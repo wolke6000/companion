@@ -498,7 +498,6 @@ class DCSProfileManager:
 
 
 class BindingsFrame(customtkinter.CTkFrame):
-    filetypes = [("DCS profile", ".diff.lua")]
     selected_device: Device | None
 
     def __init__(self, master: GUI, **kwargs):
@@ -507,58 +506,65 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.dpm = DCSProfileManager()
         profiles_found = self.dpm.load_profiles(appdata_path)
 
-        self.blub = customtkinter.CTkLabel(self, text="DCS Input Profiles")
-        self.blub.grid(row=0, column=0, columnspan=2, padx=pad, pady=pad)
-
+        title_row = customtkinter.CTkFrame(master=self)
+        title_row.grid(row=0)
+        title_label = customtkinter.CTkLabel(master=title_row, text="DCS Input Profiles")
+        title_label.grid(row=0, column=0, padx=pad, pady=pad)
         self.load_profiles_button = customtkinter.CTkButton(
-            master=self,
+            master=title_row,
             text="\u21bb",
             command=self.load_profiles,
             width=30,
         )
-        self.load_profiles_button.grid(row=1, column=0, padx=pad, pady=pad)
-
+        self.load_profiles_button.grid(row=0, column=1, padx=pad, pady=pad)
         self.settings_button = customtkinter.CTkButton(
-            master=self,
+            master=title_row,
             text="\u26ed",
             command=self.show_settings_popup,
             width=30,
         )
-        self.settings_button.grid(row=1, column=1, padx=pad, pady=pad)
+        self.settings_button.grid(row=0, column=2, padx=pad, pady=pad)
+
+        top_button_row = customtkinter.CTkFrame(master=self)
+        top_button_row.grid(row=1)
+        self.load_from_savegames_button = customtkinter.CTkButton(
+            master=top_button_row,
+            text="Load from DCS",
+            command=self.import_dcs,
+        )
+        self.load_from_savegames_button.grid(row=0, column=0, padx=pad, pady=pad)
+        self.load_switchology_profile_button = customtkinter.CTkButton(
+            master=top_button_row,
+            text="Load from Switchology profile file (*.swpf)",
+            command=self.import_swpf,
+        )
+        self.load_switchology_profile_button.grid(row=0, column=1, padx=pad, pady=pad)
 
         self.controls_frame = customtkinter.CTkScrollableFrame(self, width=500)
-        self.controls_frame.grid(row=6, column=0, columnspan=2, sticky="ns", padx=pad, pady=pad)
+        self.controls_frame.grid(row=2, sticky="ns", padx=pad, pady=pad)
+        self.grid_rowconfigure(2, weight=1)
 
-        self.grid_rowconfigure(6, weight=1)
-
-        self.load_from_savegames_button = customtkinter.CTkButton(self, text="Load your DCS control settings\nfor this device",
-                                                                  command=self.import_dcs)
-        self.load_from_savegames_button.grid(row=7, column=0, sticky="ew", padx=pad, pady=pad)
-        self.load_from_profile_button = customtkinter.CTkButton(self, text="Load a DCS profile file (*.diff.lua)",
-                                                                command=self.import_file)
-        self.load_from_profile_button.grid(row=8, column=0, sticky="ew", padx=pad, pady=pad)
-        self.load_switchology_profile_button = customtkinter.CTkButton(self, text="Load a Switchology profile file (*.swpf)",
-                                                                       command=self.import_swpf)
-        self.load_switchology_profile_button.grid(row=9, column=0, sticky="ew", padx=pad, pady=pad)
-        self.save_to_savegames_button = customtkinter.CTkButton(self, text="Push to DCS",
-                                                                command=self.export_dcs)
-        self.save_to_savegames_button.grid(row=7, column=1, sticky="ew", padx=pad, pady=pad)
-        self.save_to_profile_button = customtkinter.CTkButton(self, text="Save as DCS profile file (*.diff.lua)",
-                                                              command=self.export_file)
-        self.save_to_profile_button.grid(row=8, column=1, sticky="ew", padx=pad, pady=pad)
-        self.save_switchology_button = customtkinter.CTkButton(self, text="Save as Switchology profile file (*.swpf)",
-                                                               command=self.export_swpf)
-        self.save_switchology_button.grid(row=9, column=1, sticky="ew", padx=pad, pady=pad)
+        bottom_button_row = customtkinter.CTkFrame(master=self)
+        bottom_button_row.grid(row=3)
+        self.save_switchology_button = customtkinter.CTkButton(
+            master=bottom_button_row,
+            text="Share",
+            command=self.export_swpf
+        )
+        self.save_switchology_button.grid(row=0, column=0, padx=pad, pady=pad)
+        self.save_to_savegames_button = customtkinter.CTkButton(
+            master=bottom_button_row,
+            text="Push to DCS",
+            command=self.export_dcs,
+        )
+        self.save_to_savegames_button.grid(row=0, column=1, padx=pad, pady=pad)
 
         self.popup = None
-
         self.selected_device = None
         self.last_aircraft_choice = sorted(list(self.dpm.get_aircrafts()))[0]
         self.selected_category = None
         self.command_filter_str = ""
-
         self.controls = dict()
-
         self.diffs: dict[str, Diff] = dict()
 
         if not profiles_found:
@@ -688,37 +694,6 @@ class BindingsFrame(customtkinter.CTkFrame):
             load_profiles_button.grid(row=3, column=0, columnspan=2)
 
             back_on_top()
-
-    def import_file(self):
-        path = filedialog.askopenfilename(
-            title='Select path',
-            filetypes=self.filetypes,
-            initialdir=self.dpm.dcs_savegames_path,
-        )
-        if not os.path.isfile(path):
-            return
-        if self.diff.unsaved_changes:
-            ans = messagebox.askokcancel(
-                "Warning",
-                "Your profile has unsaved changes! If you continue, those will be lost!",
-                parent=self
-            )
-            if not ans:
-                return
-        self.diff.clear()
-        self.diff.load_from_file(path)
-
-    def export_file(self):
-        path = filedialog.asksaveasfilename(
-            title='Select path',
-            filetypes=self.filetypes,
-            initialdir=self.dpm.dcs_savegames_path,
-        )
-        if not os.path.isfile(path):
-            return
-        if not path.endswith(".diff.lua"):
-            path += ".diff.lua"
-        self.diff.store_to_file(path)
 
     def import_dcs(self):
 
