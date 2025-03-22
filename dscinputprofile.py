@@ -1,6 +1,7 @@
 import json
 import logging
 import psutil
+from pyglet.input import AbsoluteAxis
 from slpp import SLPP
 import lupa.lua51 as lupa
 from lupa.lua51 import LuaRuntime
@@ -478,9 +479,9 @@ class DCSProfileManager:
 
     def get_commands_for_aircraft_and_category(self, aircraft, category):
         if aircraft not in self.profiles.keys():
-            return KeyError
+            raise KeyError
         if category not in self.get_categories_for_aircraft(aircraft):
-            return KeyError
+            raise KeyError
         for commands_list, commandclass in [
             ("axisCommands", AxisCommand),
             ("keyCommands", KeyCommand),
@@ -497,6 +498,14 @@ class DCSProfileManager:
                     else:
                         if cat == category:
                             yield commandclass(**command)
+
+    def get_all_axis_commands_for_aircraft(self, aircraft):
+        if aircraft not in self.profiles.keys():
+            raise KeyError
+        if "axisCommands" not in self.profiles[aircraft].keys():
+            return
+        for command in self.profiles[aircraft]["axisCommands"]:
+            yield  AxisCommand(**command)
 
     def get_aircraft_for_directory(self, aircraftname):
         for key, item in self.profiles.items():
@@ -591,7 +600,8 @@ class BindingsFrame(customtkinter.CTkFrame):
         def close():
             self.command_filter_str = command_filter_var.get()
             self.last_aircraft_choice = aircraft_selection.get()
-            self.selected_category = category_selection.get()
+            if not issubclass(type(control), AbsoluteAxis):
+                self.selected_category = category_selection.get()
             command_filter_var.trace_remove("write", cb_name)
             self.popup.destroy()
 
@@ -605,27 +615,29 @@ class BindingsFrame(customtkinter.CTkFrame):
 
         def switch_aircraft(choice):
             self.last_aircraft_choice = choice
-            configlist = sorted(list(self.dpm.get_categories_for_aircraft(choice)))
-            category_selection.configure(
-                values=[all_categories_str] + configlist,
-            )
-            switch_category(all_categories_str)
+            if not issubclass(type(control), AbsoluteAxis):
+                configlist = sorted(list(self.dpm.get_categories_for_aircraft(choice)))
+                category_selection.configure(
+                    values=[all_categories_str] + configlist,
+                )
+                switch_category(all_categories_str)
+            else:
+                switch_category(axes_category_str)
 
         def switch_category(choice=None):
+            ac = aircraft_selection.get()
             if not choice:
                 choice = self.selected_category
             if choice == all_categories_str:
                 commandlist = list()
-                for cat in self.dpm.get_categories_for_aircraft(aircraft_selection.get()):
-                    commandlist += self.dpm.get_commands_for_aircraft_and_category(
-                        aircraft=aircraft_selection.get(),
-                        category=cat
-                    )
+                for cat in self.dpm.get_categories_for_aircraft(ac):
+                    commandlist += self.dpm.get_commands_for_aircraft_and_category(aircraft=ac, category=cat)
+                self.selected_category = choice
+            elif choice == axes_category_str:
+                commandlist = self.dpm.get_all_axis_commands_for_aircraft(ac)
             else:
-                commandlist = self.dpm.get_commands_for_aircraft_and_category(
-                    aircraft=aircraft_selection.get(),
-                    category=choice
-                )
+                commandlist = self.dpm.get_commands_for_aircraft_and_category(aircraft=ac, category=choice)
+                self.selected_category = choice
             for child in bindings_frame.winfo_children():
                 child.destroy()
             i = 0
@@ -639,13 +651,13 @@ class BindingsFrame(customtkinter.CTkFrame):
                 )
                 btn.grid(row=i, column=0, sticky="ew", padx=pad, pady=pad)
                 i += 1
-            self.selected_category = choice
             bindings_frame._parent_canvas.yview_moveto(0.0)
 
         def filter_commands(a, b, c):
             switch_category()
 
-        all_categories_str = "all categories"
+        all_categories_str = "all but axes"
+        axes_category_str = "axis commands"
         if self.popup is None or not self.popup.winfo_exists():
             self.popup = customtkinter.CTkToplevel(self)
         self.popup.geometry(f"+{self.winfo_rootx() - 50}+{self.winfo_rooty() + 200}")
@@ -663,13 +675,14 @@ class BindingsFrame(customtkinter.CTkFrame):
         aircraft_selection.set(self.last_aircraft_choice)
         if self.selected_category is None:
             self.selected_category = all_categories_str
-        category_selection = customtkinter.CTkOptionMenu(
-            master=self.popup,
-            values=[all_categories_str] + sorted(list(self.dpm.get_categories_for_aircraft(self.last_aircraft_choice))),
-            command=switch_category,
-        )
-        category_selection.set(self.selected_category)
-        category_selection.grid(row=0, column=1, sticky="ew", padx=pad, pady=pad)
+        if not issubclass(type(control), AbsoluteAxis):
+            category_selection = customtkinter.CTkOptionMenu(
+                master=self.popup,
+                values=[all_categories_str] + sorted(list(self.dpm.get_categories_for_aircraft(self.last_aircraft_choice))),
+                command=switch_category,
+            )
+            category_selection.set(self.selected_category)
+            category_selection.grid(row=0, column=1, sticky="ew", padx=pad, pady=pad)
         command_filter_var = customtkinter.StringVar(value=self.command_filter_str)
         cb_name = command_filter_var.trace_add("write", filter_commands)
         command_filter_entry = customtkinter.CTkEntry(
@@ -679,7 +692,10 @@ class BindingsFrame(customtkinter.CTkFrame):
         command_filter_entry.grid(row=0, column=2, padx=pad, pady=pad)
         bindings_frame = customtkinter.CTkScrollableFrame(self.popup, width=350)
         bindings_frame.grid(row=1, column=0, columnspan=3, sticky="ns", padx=pad, pady=pad)
-        switch_category(self.selected_category)
+        if issubclass(type(control), AbsoluteAxis):
+            switch_category(axes_category_str)
+        else:
+            switch_category(self.selected_category)
 
     def show_settings_popup(self):
         def load():
@@ -848,8 +864,11 @@ class BindingsFrame(customtkinter.CTkFrame):
             self.controls[control] = None
             command_name_list = list()
             for aircraft in self.diffs.keys():
-                diff = self.diffs[aircraft]
-                for command, keys in diff.key_diffs.items():
+                if issubclass(type(control), AbsoluteAxis):
+                    diff_dict = self.diffs[aircraft].axis_diffs
+                else:
+                    diff_dict = self.diffs[aircraft].key_diffs
+                for command, keys in diff_dict.items():
                     if control.raw_name in keys:
                         self.controls[control] = command
                         command_name_list.append((aircraft, command))
