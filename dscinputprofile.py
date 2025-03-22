@@ -498,6 +498,11 @@ class DCSProfileManager:
                         if cat == category:
                             yield commandclass(**command)
 
+    def get_aircraft_for_directory(self, aircraftname):
+        for key, item in self.profiles.items():
+            if item["aircraftname"] == aircraftname:
+                return key
+
 
 class BindingsFrame(customtkinter.CTkFrame):
     selected_device: Device | None
@@ -711,17 +716,20 @@ class BindingsFrame(customtkinter.CTkFrame):
 
     def import_dcs(self):
 
-        def load_from_file(a_name, a_path):
+        def load_from_file(a_dir, a_path):
             logging.debug(f"looking for input profile in {a_path}")
             for filename in os.listdir(a_path):
                 if self.selected_device.instance_guid.lower() in filename.lower():
-                    if a_name in self.diffs.keys():
+                    a_name = self.dpm.get_aircraft_for_directory(a_dir)
+                    if a_name is None:
+                        return
+                    if a_dir in self.diffs.keys():
                         self.diffs[a_name].clear()
                     else:
                         self.diffs[a_name] = Diff()
                     self.diffs[a_name].load_from_file(os.path.join(a_path, filename))
                     return
-            logging.debug(f"no input profile found for \"{self.selected_device}\" and \"{a_name}\"")
+            logging.debug(f"no input profile found for \"{self.selected_device}\" and \"{a_dir}\"")
 
         if any(diff.unsaved_changes for diff in self.diffs.values()):
             ans = messagebox.askokcancel(
@@ -736,15 +744,15 @@ class BindingsFrame(customtkinter.CTkFrame):
             "Config",
             "Input",
         )
-        for aircraftname in os.listdir(config_input_path):
+        for aircraft_directory in os.listdir(config_input_path):
             path = os.path.join(
                 config_input_path,
-                aircraftname,
+                aircraft_directory,
                 "Joystick",
             )
             if not os.path.isdir(path):
                 continue
-            load_from_file(aircraftname, path)
+            load_from_file(aircraft_directory, path)
         self.populate_controls_list()
         self.profile_name_variable.set("unnamed profile")
 
