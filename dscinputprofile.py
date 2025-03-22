@@ -9,6 +9,8 @@ import winreg
 import customtkinter
 from tkinter import filedialog, messagebox
 
+from PullDownButton import PullDownButton
+
 import Switchology
 from Device import Device, ControlIndicator
 from gui import GUI, appdata_path, PathSelector
@@ -527,18 +529,16 @@ class BindingsFrame(customtkinter.CTkFrame):
 
         top_button_row = customtkinter.CTkFrame(master=self)
         top_button_row.grid(row=1)
-        self.load_from_savegames_button = customtkinter.CTkButton(
+        self.import_button = PullDownButton(
             master=top_button_row,
-            text="Load from DCS",
-            command=self.import_dcs,
+            text="Load...",
+            values={
+                "...from *.swpf-file": self.import_swpf,
+                "...from DCS": self.import_dcs,
+                "...clear profile": self.clear_diffs,
+            }
         )
-        self.load_from_savegames_button.grid(row=0, column=0, padx=pad, pady=pad)
-        self.load_switchology_profile_button = customtkinter.CTkButton(
-            master=top_button_row,
-            text="Load from Switchology profile file (*.swpf)",
-            command=self.import_swpf,
-        )
-        self.load_switchology_profile_button.grid(row=0, column=1, padx=pad, pady=pad)
+        self.import_button.grid(row=0)
 
         self.controls_frame = customtkinter.CTkScrollableFrame(self, width=500)
         self.controls_frame.grid(row=2, sticky="ns", padx=pad, pady=pad)
@@ -546,12 +546,14 @@ class BindingsFrame(customtkinter.CTkFrame):
 
         bottom_button_row = customtkinter.CTkFrame(master=self)
         bottom_button_row.grid(row=3)
-        self.save_switchology_button = customtkinter.CTkButton(
+        self.export_button = PullDownButton(
             master=bottom_button_row,
-            text="Share",
-            command=self.export_swpf
+            text="Share...",
+            values={
+                "...to *.swpf-file": self.export_swpf
+            }
         )
-        self.save_switchology_button.grid(row=0, column=0, padx=pad, pady=pad)
+        self.export_button.grid(row=0)
         self.save_to_savegames_button = customtkinter.CTkButton(
             master=bottom_button_row,
             text="Push to DCS",
@@ -848,6 +850,10 @@ class BindingsFrame(customtkinter.CTkFrame):
                 wraplength=360,
             )
             binding.grid(row=i, column=2, sticky="w", padx=pad, pady=pad)
+
+    def clear_diffs(self):
+        self.diffs.clear()
+        self.populate_controls_list()
 
 
 def main():
