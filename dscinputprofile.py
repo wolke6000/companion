@@ -585,6 +585,8 @@ class BindingsFrame(customtkinter.CTkFrame):
 
         def close():
             self.command_filter_str = command_filter_var.get()
+            self.last_aircraft_choice = aircraft_selection.get()
+            self.selected_category = category_selection.get()
             command_filter_var.trace_remove("write", cb_name)
             self.popup.destroy()
 
@@ -645,12 +647,15 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.popup.title(f"Configure command for {control.raw_name}")
         self.popup.after(100, self.popup.lift)
         self.popup.focus()
+        if self.last_aircraft_choice is None:
+            self.last_aircraft_choice = sorted(list(self.dpm.get_aircrafts()))[0]
         aircraft_selection = customtkinter.CTkOptionMenu(
             master=self.popup,
             values=sorted(list(self.dpm.get_aircrafts())),
             command=switch_aircraft,
         )
         aircraft_selection.grid(row=0, column=0, sticky="ew", padx=pad, pady=pad)
+        aircraft_selection.set(self.last_aircraft_choice)
         if self.selected_category is None:
             self.selected_category = all_categories_str
         category_selection = customtkinter.CTkOptionMenu(
@@ -658,7 +663,7 @@ class BindingsFrame(customtkinter.CTkFrame):
             values=[all_categories_str] + sorted(list(self.dpm.get_categories_for_aircraft(self.last_aircraft_choice))),
             command=switch_category,
         )
-        category_selection.set(all_categories_str)
+        category_selection.set(self.selected_category)
         category_selection.grid(row=0, column=1, sticky="ew", padx=pad, pady=pad)
         command_filter_var = customtkinter.StringVar(value=self.command_filter_str)
         cb_name = command_filter_var.trace_add("write", filter_commands)
@@ -669,7 +674,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         command_filter_entry.grid(row=0, column=2, padx=pad, pady=pad)
         bindings_frame = customtkinter.CTkScrollableFrame(self.popup, width=350)
         bindings_frame.grid(row=1, column=0, columnspan=3, sticky="ns", padx=pad, pady=pad)
-        switch_category(all_categories_str)
+        switch_category(self.selected_category)
 
     def show_settings_popup(self):
         def load():
