@@ -248,7 +248,7 @@ class Diff:
             diffs = self.axis_diffs
         else:
             return
-        diffs[command] = list()
+        diffs.pop(command)
 
     def clear_key(self, key):
         self.unsaved_changes = True
@@ -708,7 +708,6 @@ class BindingsFrame(customtkinter.CTkFrame):
                     else:
                         self.diffs[a_name] = Diff()
                     self.diffs[a_name].load_from_file(os.path.join(a_path, filename))
-                    self.populate_controls_list()
                     return
             logging.debug(f"no input profile found for \"{self.selected_device}\" and \"{a_name}\"")
 
@@ -734,6 +733,7 @@ class BindingsFrame(customtkinter.CTkFrame):
             if not os.path.isdir(path):
                 continue
             load_from_file(aircraftname, path)
+        self.populate_controls_list()
 
     def export_dcs(self):
 
@@ -829,31 +829,60 @@ class BindingsFrame(customtkinter.CTkFrame):
                 for command, keys in diff.key_diffs.items():
                     if control.raw_name in keys:
                         self.controls[control] = command
-                        command_name_list.append(f"{aircraft}:{command.name}")
+                        command_name_list.append((aircraft, command))
                         # break
-            indicator = ControlIndicator(self.controls_frame, control)
-            self.selected_device.add_subscriber(control, indicator.update_value)
-            indicator.grid(row=i, column=0, sticky="w", padx=pad, pady=pad)
 
+            controls_line_frame = customtkinter.CTkFrame(master=self.controls_frame)
+            controls_line_frame.grid(row=i, column=0, sticky="ew", pady=3)
+            indicator = ControlIndicator(controls_line_frame, control)
+            indicator.grid(row=0, column=0, sticky="w", padx=pad, pady=pad)
+            self.selected_device.add_subscriber(control, indicator.update_value)
             button = customtkinter.CTkButton(
-                master=self.controls_frame,
-                text="\u21c4",
+                master=controls_line_frame,
+                text="\uff0b",
                 command=lambda c=control: self.show_keybind_popup(c),
                 width=30
             )
-            button.grid(row=i, column=1, sticky="w", padx=pad, pady=pad)
+            button.grid(row=0, column=1, sticky="w", padx=pad, pady=pad)
+            for j, (aircraft, command) in enumerate(command_name_list):
+                binding = BindingButton(
+                    master=controls_line_frame,
+                    text=f"{aircraft.strip()}: {command.name.strip()}",
+                    command=lambda a=aircraft, c=command: self.remove_binding(a, c),
+                )
+                binding.bind('<Enter>', binding.configure,)
+                binding.grid(row=j, column=2, sticky="w")
 
-            binding = customtkinter.CTkLabel(
-                master=self.controls_frame,
-                text=", ".join(command_name_list),
-                justify="left",
-                wraplength=360,
-            )
-            binding.grid(row=i, column=2, sticky="w", padx=pad, pady=pad)
+    def remove_binding(self, ac, cm):
+        self.diffs[ac].clear_command(cm)
+        self.populate_controls_list()
 
     def clear_diffs(self):
         self.diffs.clear()
         self.populate_controls_list()
+
+
+class BindingButton(customtkinter.CTkButton):
+
+    def __init__(self, master, **kwargs):
+        super().__init__(
+            master=master,
+            bg_color=master._fg_color,
+            fg_color=master._fg_color,
+            hover_color=master._fg_color,
+            border_color=master._fg_color,
+            **kwargs,
+        )
+
+    def _on_enter(self, event=None):
+        super()._on_enter(event=event)
+        self._font = customtkinter.CTkFont(overstrike=True)
+        self._update_font()
+
+    def _on_leave(self, event=None):
+        super()._on_leave(event=event)
+        self._font = customtkinter.CTkFont(overstrike=False)
+        self._update_font()
 
 
 def main():
