@@ -528,7 +528,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.settings_button.grid(row=0, column=2, padx=pad, pady=pad)
 
         top_button_row = customtkinter.CTkFrame(master=self)
-        top_button_row.grid(row=1)
+        top_button_row.grid(row=1, sticky="ew")
         self.import_button = PullDownButton(
             master=top_button_row,
             text="Load...",
@@ -538,14 +538,21 @@ class BindingsFrame(customtkinter.CTkFrame):
                 "...clear profile": self.clear_diffs,
             }
         )
-        self.import_button.grid(row=0)
+        self.import_button.grid(row=0, column=0, padx=pad, pady=pad)
+        self.profile_name_variable = customtkinter.StringVar(value="unnamed profile")
+        self.profile_name_entry = customtkinter.CTkEntry(
+            master=top_button_row,
+            textvariable=self.profile_name_variable,
+            width=300
+        )
+        self.profile_name_entry.grid(row=0, column=1, sticky="ew", padx=pad, pady=pad)
 
         self.controls_frame = customtkinter.CTkScrollableFrame(self, width=500)
         self.controls_frame.grid(row=2, sticky="ns", padx=pad, pady=pad)
         self.grid_rowconfigure(2, weight=1)
 
         bottom_button_row = customtkinter.CTkFrame(master=self)
-        bottom_button_row.grid(row=3)
+        bottom_button_row.grid(row=3, sticky="ew")
         self.export_button = PullDownButton(
             master=bottom_button_row,
             text="Share...",
@@ -553,7 +560,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                 "...to *.swpf-file": self.export_swpf
             }
         )
-        self.export_button.grid(row=0)
+        self.export_button.grid(row=0, column=0, padx=pad, pady=pad)
         self.save_to_savegames_button = customtkinter.CTkButton(
             master=bottom_button_row,
             text="Push to DCS",
@@ -734,6 +741,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                 continue
             load_from_file(aircraftname, path)
         self.populate_controls_list()
+        self.profile_name_variable.set("unnamed profile")
 
     def export_dcs(self):
 
@@ -776,6 +784,7 @@ class BindingsFrame(customtkinter.CTkFrame):
             if loaddict.get("build_id", "") != self.selected_device.build_id:
                 logging.error(f"Selected device's build id \"{self.selected_device.build_id}\" does not match the profile's build id \"{loaddict.get('build_id', '')}\"")
                 return
+        self.profile_name_variable.set(loaddict.get("profile_name", "unnamed profile"))
         dcsdiffs = loaddict.get("DCSdiffs", {})
         if dcsdiffs is {}:
             logging.error(f"The file does not contain a DCS profile!")
@@ -803,6 +812,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         if not path.endswith(".swpf"):
             path += ".swpf"
         storedict = self.selected_device.get_settings_dict()
+        storedict["profile_name"] = self.profile_name_variable.get()
         storedict["DCSdiffs"] = dict()
         for aircraft, diff in self.diffs.items():
             storedict["DCSdiffs"][aircraft] = diff.to_dict()
@@ -858,6 +868,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.populate_controls_list()
 
     def clear_diffs(self):
+        self.profile_name_variable.set("unnamed profile")
         self.diffs.clear()
         self.populate_controls_list()
 
