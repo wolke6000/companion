@@ -538,7 +538,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                                                                 command=self.import_file)
         self.load_from_profile_button.grid(row=8, column=0, sticky="ew", padx=pad, pady=pad)
         self.load_switchology_profile_button = customtkinter.CTkButton(self, text="Load a Switchology profile file (*.swpf)",
-                                                                       command=self.import_switchology)
+                                                                       command=self.import_swpf)
         self.load_switchology_profile_button.grid(row=9, column=0, sticky="ew", padx=pad, pady=pad)
         self.save_to_savegames_button = customtkinter.CTkButton(self, text="Push to DCS",
                                                                 command=self.export_dcs)
@@ -547,7 +547,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                                                               command=self.export_file)
         self.save_to_profile_button.grid(row=8, column=1, sticky="ew", padx=pad, pady=pad)
         self.save_switchology_button = customtkinter.CTkButton(self, text="Save as Switchology profile file (*.swpf)",
-                                                               command=self.export_switchology)
+                                                               command=self.export_swpf)
         self.save_switchology_button.grid(row=9, column=1, sticky="ew", padx=pad, pady=pad)
 
         self.popup = None
@@ -559,7 +559,7 @@ class BindingsFrame(customtkinter.CTkFrame):
 
         self.controls = dict()
 
-        self.diffs = dict()
+        self.diffs: dict[str, Diff] = dict()
 
         if not profiles_found:
             self.after(100, self.show_settings_popup)
@@ -735,7 +735,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                     return
             logging.debug(f"no input profile found for \"{self.selected_device}\" and \"{a_name}\"")
 
-        if any(diff.unsaved_changes for diff in self.diffs):
+        if any(diff.unsaved_changes for diff in self.diffs.values()):
             ans = messagebox.askokcancel(
                 "Warning",
                 "Your profile has unsaved changes! If you continue, those will be lost!",
@@ -771,13 +771,12 @@ class BindingsFrame(customtkinter.CTkFrame):
             filename = str(self.selected_device)
             diff.store_to_file(os.path.join(path, filename))
 
-        for aircraftname in self.diffs.keys():
-            diff = self.diffs[aircraftname]
+        for aircraft, diff in self.diffs.items():
             path = os.path.join(
                 self.dpm.dcs_savegames_path,
                 "Config",
                 "Input",
-                self.dpm.profiles[aircraftname]["aircraftname"],
+                self.dpm.profiles[aircraft]["aircraftname"],
                 "Joystick"
             )
             if self.dpm.check_if_dcs_is_running():
@@ -787,7 +786,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                 )
             store_to_file(path)
 
-    def import_switchology(self):
+    def import_swpf(self):
         path = filedialog.askopenfilename(
             title='Select path',
             filetypes=[("Switchology profile", ".swpf")],
@@ -800,11 +799,11 @@ class BindingsFrame(customtkinter.CTkFrame):
             if loaddict.get("build_id", "") != self.selected_device.build_id:
                 logging.error(f"Selected device's build id \"{self.selected_device.build_id}\" does not match the profile's build id \"{loaddict.get('build_id', '')}\"")
                 return
-        dcsdiff = loaddict.get("DCSdiff", None)
-        if dcsdiff is None:
+        dcsdiffs = loaddict.get("DCSdiffs", {})
+        if dcsdiffs is {}:
             logging.error(f"The file does not contain a DCS profile!")
             return
-        if self.diff.unsaved_changes:
+        if any(diff.unsaved_changes for diff in self.diffs.values()):
             ans = messagebox.askokcancel(
                 "Warning",
                 "Your profile has unsaved changes! If you continue, those will be lost!",
@@ -812,21 +811,24 @@ class BindingsFrame(customtkinter.CTkFrame):
             )
             if not ans:
                 return
-        self.diff.clear()
-        self.diff.from_dict(dcsdiff)
+        self.diffs.clear()
+        for aircraft, diff_dict in dcsdiffs.items():
+            self.diffs[aircraft] = Diff()
+            self.diffs[aircraft].from_dict(diff_dict)
+        self.populate_controls_list()
         logging.info(f"Switchology profile loaded from \"{path}\"")
 
-    def export_switchology(self):
+    def export_swpf(self):
         path = filedialog.asksaveasfilename(
             title='Select path',
             filetypes=[("Switchology profile", ".swpf")],
         )
-        if not os.path.isfile(path):
-            return
         if not path.endswith(".swpf"):
             path += ".swpf"
         storedict = self.selected_device.get_settings_dict()
-        storedict["DCSdiff"] = self.diff.to_dict()
+        storedict["DCSdiffs"] = dict()
+        for aircraft, diff in self.diffs.items():
+            storedict["DCSdiffs"][aircraft] = diff.to_dict()
         with open(path, "w") as f:
             json.dump(storedict, f, indent=4)
         logging.info(f"Switchology profile stored to \"{path}\"")
