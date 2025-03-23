@@ -257,6 +257,16 @@ class Diff:
             if key in keys:
                 keys.remove(key)
 
+    def clear_command_key(self, command: Command, key):
+        self.unsaved_changes = True
+        if isinstance(command, KeyCommand):
+            diffs = self.key_diffs
+        elif isinstance(command, AxisCommand):
+            diffs = self.axis_diffs
+        else:
+            return
+        diffs[command].remove(key)
+
     def get_key_for_command(self, command: Command):
         if isinstance(command, KeyCommand):
             diffs = self.key_diffs
@@ -921,13 +931,13 @@ class BindingsFrame(customtkinter.CTkFrame):
                 binding = BindingButton(
                     master=controls_line_frame,
                     text=f"{aircraft.strip()}: {command.name.strip()}",
-                    command=lambda a=aircraft, c=command: self.remove_binding(a, c),
+                    command=lambda a=aircraft, c=command, k=control.raw_name: self.remove_binding(a, c, k),
                 )
                 binding.bind('<Enter>', binding.configure,)
                 binding.grid(row=j, column=2, sticky="w")
 
-    def remove_binding(self, ac, cm):
-        self.diffs[ac].clear_command(cm)
+    def remove_binding(self, aircraft, command, key):
+        self.diffs[aircraft].clear_command_key(command, key)
         self.populate_controls_list()
 
     def clear_diffs(self):
