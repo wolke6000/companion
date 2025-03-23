@@ -243,7 +243,7 @@ class Device:
             subscriber(control, value)
         if control in self.subscribers.keys():
             for subscriber in self.subscribers[control]:
-                subscriber(value)
+                subscriber(value, control)
 
     def get_settings_dict(self):
         return dict()
@@ -251,7 +251,7 @@ class Device:
 
 class ControlIndicator(customtkinter.CTkLabel):
 
-    def update_value(self, value):
+    def update_value(self, value, control=None):
         self.configure(
             text=f"{self.control.raw_name}: {value}",
             # text_color_disabled="green"
