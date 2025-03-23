@@ -584,7 +584,7 @@ class BindingsFrame(customtkinter.CTkFrame):
 
         self.popup = None
         self.selected_device = None
-        self.last_aircraft_choice = sorted(list(self.dpm.get_aircrafts()))[0]
+        self.last_aircraft_choice = None
         self.selected_category = None
         self.command_filter_str = ""
         self.controls = dict()
@@ -852,6 +852,7 @@ class BindingsFrame(customtkinter.CTkFrame):
     def load_profiles(self):
         self.dpm.scan_for_profiles()
         self.dpm.store_profiles(appdata_path)
+        self.last_aircraft_choice = None  # sorted(list(self.dpm.get_aircrafts()))[0]
 
     def populate_controls_list(self):
         def destroy_children(widget):
