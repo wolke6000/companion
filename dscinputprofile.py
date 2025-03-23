@@ -1,7 +1,7 @@
 import json
 import logging
 import psutil
-from pyglet.input import AbsoluteAxis
+from pyglet.input import AbsoluteAxis, Button
 from slpp import SLPP
 import lupa.lua51 as lupa
 from lupa.lua51 import LuaRuntime
@@ -589,6 +589,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.command_filter_str = ""
         self.controls = dict()
         self.diffs: dict[str, Diff] = dict()
+        self.open_popup_with_control = False
 
         if not profiles_found:
             self.after(100, self.show_settings_popup)
@@ -699,9 +700,15 @@ class BindingsFrame(customtkinter.CTkFrame):
 
     def show_settings_popup(self):
         def load():
-            self.dpm.set_dcs_path(dcs_path_selector.path.get())
-            self.dpm.set_dcs_savegames_path(dcs_savegames_path_selector.path.get())
-            self.load_profiles()
+            new_dcs_path = dcs_path_selector.path.get()
+            new_dcs_savegames_path = dcs_savegames_path_selector.path.get()
+            if old_dcs_path != new_dcs_path:
+                self.dpm.set_dcs_path(new_dcs_path)
+            if old_dcs_savegames_path != new_dcs_savegames_path:
+                self.dpm.set_dcs_savegames_path(new_dcs_savegames_path)
+            if old_dcs_path != new_dcs_path or old_dcs_savegames_path != new_dcs_savegames_path:
+                self.load_profiles()
+            self.populate_controls_list()
             self.popup.destroy()
 
         def back_on_top():
@@ -710,23 +717,40 @@ class BindingsFrame(customtkinter.CTkFrame):
                     self.popup.lift()
                 self.popup.after(100, back_on_top)
 
+        def switch_callback():
+            self.open_popup_with_control = open_popup_with_control_switch.get()
+
         if self.popup is None or not self.popup.winfo_exists():
+
             self.popup = customtkinter.CTkToplevel(self)
             self.popup.title(f"Configure DCS Paths")
 
             label = customtkinter.CTkLabel(self.popup,
                                            text="Please specify DCS paths")
-            label.grid(row=0, column=0, columnspan=2, sticky="ew")
+            label.grid(sticky="ew")
 
             dcs_path_selector = PathSelector(self.popup, path=find_dcs_install_path(), title="DCS path")
-            dcs_path_selector.grid(row=1, column=0, columnspan=2, sticky="ew")
+            old_dcs_path = dcs_path_selector.path.get()
+            dcs_path_selector.grid(sticky="ew")
 
             dcs_savegames_path_selector = PathSelector(self.popup, path=find_dcs_savegames_path(),
                                                        title="DCS Saved Games path")
-            dcs_savegames_path_selector.grid(row=2, column=0, columnspan=2, sticky="ew")
+            old_dcs_savegames_path = dcs_savegames_path_selector.path.get()
+            dcs_savegames_path_selector.grid(sticky="ew")
 
-            load_profiles_button = customtkinter.CTkButton(self.popup, text="Save settings", command=load)
-            load_profiles_button.grid(row=3, column=0, columnspan=2)
+            open_popup_with_control_switch = customtkinter.CTkSwitch(
+                master=self.popup,
+                text="Open bindings popup when pressing device buttons",
+                command=switch_callback,
+            )
+            if self.open_popup_with_control:
+                open_popup_with_control_switch.select()
+            else:
+                open_popup_with_control_switch.deselect()
+            open_popup_with_control_switch.grid()
+
+            save_settings_button = customtkinter.CTkButton(self.popup, text="Save settings", command=load)
+            save_settings_button.grid()
 
             back_on_top()
 
@@ -884,6 +908,8 @@ class BindingsFrame(customtkinter.CTkFrame):
             indicator = ControlIndicator(controls_line_frame, control)
             indicator.grid(row=0, column=0, sticky="w", padx=pad, pady=pad)
             self.selected_device.add_subscriber(control, indicator.update_value)
+            if self.open_popup_with_control:
+                self.selected_device.add_subscriber(control, self.open_popup_on_control)
             button = customtkinter.CTkButton(
                 master=controls_line_frame,
                 text="\uff0b",
@@ -908,6 +934,14 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.profile_name_variable.set("unnamed profile")
         self.diffs.clear()
         self.populate_controls_list()
+
+    def open_popup_on_control(self, value, control):
+        if not self.open_popup_with_control:
+            return
+        if isinstance(control, Button):
+            self.show_keybind_popup(control)
+
+
 
 
 class BindingButton(customtkinter.CTkButton):
