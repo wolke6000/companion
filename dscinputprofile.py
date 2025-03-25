@@ -1,7 +1,9 @@
 import json
 import logging
+import typing
+
 import psutil
-from pyglet.input import AbsoluteAxis, Button
+from pyglet.input import AbsoluteAxis, Button, Control
 from slpp import SLPP
 import lupa.lua51 as lupa
 from lupa.lua51 import LuaRuntime
@@ -29,7 +31,10 @@ my_utils = loadfile('my_utils.lua')
 
 
 def find_dcs_savegames_path():
-    path = os.path.join(os.path.expanduser("~"), "Saved Games", "DCS.openbeta")
+    for dcs_dir in ["DCS", "DCS.openbeta"]:
+        path = os.path.join(os.path.expanduser("~"), "Saved Games", dcs_dir)
+        if os.path.exists(path):
+            break
     logging.debug(f"dcs savegames path located at \"{path}\"")
     return path
 
@@ -114,7 +119,10 @@ def load_device_profile_from_file(filename, device_name, folder, keep_g_untouche
             if not skip:
                 data_lua_content += line
                 if line.startswith("end"):
-                    break
+                    skip = True
+            if line.startswith("local fdef, errfdef = loadfile('./Scripts/Input/DefaultAssignments.lua')"):
+                data_lua_content += line
+                skip = False
 
     lua.execute(data_lua_content)
     fun = lua.eval("loadDeviceProfileFromFile")
@@ -217,7 +225,94 @@ class AxisCommand(Command):
         return f"a{self.action}cd{self.cockpit_device_id}"
 
 
+class DiffEntry:
+    _controls_added: set[str]
+    _controls_removed: set[str]
+
+    def __init__(self, add: str | typing.Iterable[str] | None = None, remove: str | typing.Iterable[str] | None = None):
+        self._controls_added = set()
+        if isinstance(add, str):
+            self._controls_added.add(add)
+        elif issubclass(type(add), typing.Iterable):
+            for a in add:
+                self._controls_added.add(a)
+        self._controls_removed = set()
+        if isinstance(remove, str):
+            self._controls_removed.add(remove)
+        elif issubclass(type(remove), typing.Iterable):
+            for r in remove:
+                self._controls_removed.add(r)
+
+
+    def __repr__(self):
+        repr_str = ""
+        if len(self._controls_added) > 0:
+            repr_str += ", +:[" + ", ".join([c for c in self._controls_added]) + "]"
+        if len(self._controls_removed) > 0:
+            repr_str += ", -:[" + ", ".join([c for c in self._controls_removed]) + "]"
+        return repr_str
+
+    def add_control(self, control: str):
+        if control in self._controls_added:
+            return
+        elif control in self._controls_removed:
+            self._controls_removed.remove(control)  # cancelled
+        else:
+            self._controls_added.add(control)
+
+    def remove_control(self, control: str):
+        if control in self._controls_removed:
+            return
+        elif control in self._controls_added:
+            self._controls_added.remove(control)  # cancelled
+        else:
+            self._controls_added.add(control)
+
+    @property
+    def controls(self):
+        return self._controls_added | self._controls_removed
+
+    @property
+    def active_controls(self):
+        return self._controls_added - self._controls_removed
+
+    def to_dict(self):
+        def rename_control(control):
+            if "Button" in control:
+                return "JOY_BTN" + str(int(control.replace("Button ", "")) + 1)
+            else:
+                return control
+        retval = dict()
+        if len(self._controls_added) > 0:
+            retval["added"] = dict()
+            for i, added in enumerate(self._controls_added):
+                retval["added"][i+1] = {"key": rename_control(added)}
+        if len(self._controls_removed) > 0:
+            retval["removed"] = dict()
+            for i, removed in enumerate(self._controls_removed):
+                retval["removed"][i+1] = {"key": rename_control(removed)}
+        return retval
+
+
+    def __add__(self, other: "DiffEntry"):
+        return DiffEntry(
+            add=(self._controls_added - other._controls_removed) | (other._controls_added - self._controls_removed),
+            remove=(self._controls_removed - other._controls_added) | (other._controls_removed - self._controls_added)
+        )
+
+    def __sub__(self, other: "DiffEntry"):
+        return self.__add__(other.__neg__())
+
+    def __neg__(self):
+        return DiffEntry(
+            add=self._controls_removed,
+            remove=self._controls_added,
+        )
+
+
 class Diff:
+    axis_diffs: dict[Command, DiffEntry]
+    key_diffs: dict[Command, DiffEntry]
     def __init__(self):
         self.axis_diffs = dict()
         self.key_diffs = dict()
@@ -229,7 +324,7 @@ class Diff:
         self.axis_diffs.clear()
         self.key_diffs.clear()
 
-    def add_diff(self, command: Command, key):
+    def add_diff(self, command: Command, entry: DiffEntry):
         self.unsaved_changes = True
         if isinstance(command, KeyCommand):
             diffs = self.key_diffs
@@ -237,11 +332,12 @@ class Diff:
             diffs = self.axis_diffs
         else:
             return
-        if command not in diffs.keys():
-            diffs[command] = list()
-        diffs[command].append(key)
+        if command in diffs.keys():
+            diffs[command] += entry
+        else:
+            diffs[command] = entry
 
-    def clear_command(self, command: Command):
+    def remove_diff(self, command: Command, entry: DiffEntry):
         self.unsaved_changes = True
         if isinstance(command, KeyCommand):
             diffs = self.key_diffs
@@ -249,32 +345,10 @@ class Diff:
             diffs = self.axis_diffs
         else:
             return
-        diffs.pop(command)
-
-    def clear_key(self, key):
-        self.unsaved_changes = True
-        for command, keys in self.key_diffs.items():
-            if key in keys:
-                keys.remove(key)
-
-    def clear_command_key(self, command: Command, key):
-        self.unsaved_changes = True
-        if isinstance(command, KeyCommand):
-            diffs = self.key_diffs
-        elif isinstance(command, AxisCommand):
-            diffs = self.axis_diffs
+        if command in diffs.keys():
+            diffs[command] -= entry
         else:
-            return
-        diffs[command].remove(key)
-
-    def get_key_for_command(self, command: Command):
-        if isinstance(command, KeyCommand):
-            diffs = self.key_diffs
-        elif isinstance(command, AxisCommand):
-            diffs = self.axis_diffs
-        else:
-            return
-        return diffs.get(command, [])
+            diffs[command] = -entry
 
     def to_lua_table(self):
         return SLPP().encode(self.to_dict())
@@ -296,39 +370,60 @@ class Diff:
         logging.info(f"input profile loaded from \"{filepath}\"")
 
     def to_dict(self):
-        def rename_keys(key):
-            return "JOY_BTN" + str(int(key.replace("Button ", ""))+1)
-        return {
-                "axisDiffs": {
-                    command.commandhash(): {
-                        "added": {
-                            i + 1: {"key": keybind} for i, keybind in enumerate(self.axis_diffs[command])
-                        },
-                        "name": command.name,
-                    } for command in self.axis_diffs.keys()
-                },
-                "keyDiffs": {
-                    command.commandhash(): {
-                        "added": {
-                            i + 1: {"key": rename_keys(keybind)} for i, keybind in enumerate(self.key_diffs[command])
-                        },
-                        "name": command.name,
-                    } for command in self.key_diffs.keys()
-                },
-            }
+        retval = { "axisDiffs": dict(), "keyDiffs": dict() }
+        for diffs, diffs_key in [(self.axis_diffs, "axisDiffs"), (self.key_diffs, "keyDiffs")]:
+            for command, diffentry in diffs.items():
+                if len(diffentry.controls) > 0:
+                    retval[diffs_key][command.commandhash()] = diffentry.to_dict()
+                    retval[diffs_key][command.commandhash()]["name"] = command.name
+        return retval
 
     def from_dict(self, origin_dict):
         def rename_keys(key):
             if "JOY_BTN" in key:
-                return "Button " + str(int(key.replace("JOY_BTN", ""))-1)
+                try:
+                    return "Button " + str(int(key.replace("JOY_BTN", ""))-1)
+                except ValueError:
+                    return key
+            return key
 
-        if "keyDiffs" in origin_dict.keys():
-            for keydiff in origin_dict["keyDiffs"].keys():
-                name = origin_dict["keyDiffs"][keydiff]["name"]
-                if 'added' in origin_dict["keyDiffs"][keydiff].keys():
-                    for added in origin_dict["keyDiffs"][keydiff]['added'].keys():
-                        key = rename_keys(origin_dict["keyDiffs"][keydiff]['added'][added]["key"])
-                        self.add_diff(KeyCommand(hash=keydiff, name=name), key)
+        for diffs_key in ["axisDiffs", "keyDiffs"]:
+            if diffs_key in origin_dict.keys():
+                for keydiff in origin_dict[diffs_key].keys():
+                    name = origin_dict[diffs_key][keydiff]["name"]
+                    for operation, operation_key in [(self.add_diff, "added"), (self.remove_diff, "removed")]:
+                        if operation_key in origin_dict[diffs_key][keydiff].keys():
+                            for item in origin_dict[diffs_key][keydiff][operation_key].keys():
+                                key = rename_keys(origin_dict[diffs_key][keydiff][operation_key][item]["key"])
+                                operation(KeyCommand(hash=keydiff, name=name), DiffEntry(rename_keys(key)))
+
+    def __add__(self, other: "Diff"):
+        result = Diff()
+        for diffs_name in ["key_diffs", "axis_diffs"]:
+            self_diffs = getattr(self, diffs_name)
+            other_diffs = getattr(other, diffs_name)
+            result_diffs = getattr(result, diffs_name)
+            for command in set(self_diffs.keys()).union(set(other_diffs.keys())):
+                entry = DiffEntry()
+                if command in self_diffs.keys():
+                    entry += self_diffs[command]
+                if command in other_diffs.keys():
+                    entry += other_diffs[command]
+                if len(entry.controls) > 0:
+                    result_diffs[command] = entry
+        return result
+
+    def __neg__(self):
+        result = Diff()
+        for diffs_name in ["key_diffs", "axis_diffs"]:
+            self_diffs = getattr(self, diffs_name)
+            result_diffs = getattr(result, diffs_name)
+            for command, entry in self_diffs.items():
+                result_diffs[command] = -entry
+        return result
+
+    def __sub__(self, other):
+        return self.__add__(other.__neg__())
 
 
 class DCSProfileManager:
@@ -338,6 +433,7 @@ class DCSProfileManager:
         self.dcs_savegames_path = None
         self.dcs_config_version = None
         self.profiles = dict()
+        self.default_diffs = dict()
 
     def set_dcs_path(self, path):
         if not os.path.isdir(path):
@@ -382,6 +478,13 @@ class DCSProfileManager:
             )
 
     def load_profiles(self, path):
+        def rename_keys(key):
+            if "JOY_BTN" in key:
+                try:
+                    return "Button " + str(int(key.replace("JOY_BTN", ""))-1)
+                except ValueError:
+                    pass
+            return key
         filepath = os.path.join(path, "dcs_config.json")
         if not os.path.isfile(filepath):
             logging.warning(f"could not find dcs config in \"{filepath}\"")
@@ -428,6 +531,17 @@ class DCSProfileManager:
                                 else:
                                     result["aircraftname"] = aircraftname
                                     self.profiles[aircraftname_pretty] = result
+                                    self.default_diffs[aircraftname_pretty] = Diff()
+                                    for command_class, command_class_key in [(KeyCommand, "keyCommands"), (AxisCommand, "axisCommands")]:
+                                        if command_class_key not in self.profiles[aircraftname_pretty]:
+                                            continue
+                                        for command in self.profiles[aircraftname_pretty][command_class_key]:
+                                            if not "combos" in command:
+                                                continue
+                                            diff_entry = DiffEntry()
+                                            for combo in command["combos"]:
+                                                diff_entry.add_control(combo["key"])
+                                            self.default_diffs[aircraftname_pretty].add_diff(command_class(**command), diff_entry)
                         except Exception as e:
                             logging.debug(f"Exception when loading from {foundpath}: {e}")
 
@@ -462,6 +576,18 @@ class DCSProfileManager:
                     else:
                         result["aircraftname"] = aircraftname
                         self.profiles[aircraftname_pretty] = result
+                        self.default_diffs[aircraftname_pretty] = Diff()
+                        for command_class, command_class_key in [(KeyCommand, "keyCommands"),
+                                                                 (AxisCommand, "axisCommands")]:
+                            if command_class_key not in  self.profiles[aircraftname_pretty]:
+                                continue
+                            for command in self.profiles[aircraftname_pretty][command_class_key]:
+                                if not "combos" in command:
+                                    continue
+                                diff_entry = DiffEntry()
+                                for combo in command["combos"]:
+                                    diff_entry.add_control(combo["key"])
+                                self.default_diffs[aircraftname_pretty].add_diff(command_class(**command), diff_entry)
 
         scan_mods_aircraft_dir(os.path.join(self.dcs_path, 'Mods', 'aircraft'))
         scan_config_input_dir(os.path.join(self.dcs_path, 'Config', 'Input'))
@@ -619,8 +745,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         def bind(command, key):
             if aircraft_selection.get() not in self.diffs.keys():
                 self.diffs[aircraft_selection.get()] = Diff()
-            self.diffs[aircraft_selection.get()].clear_key(key)
-            self.diffs[aircraft_selection.get()].add_diff(command, key)
+            self.diffs[aircraft_selection.get()].add_diff(command, DiffEntry(key))
             self.populate_controls_list()
             close()
 
@@ -802,22 +927,25 @@ class BindingsFrame(customtkinter.CTkFrame):
             )
             if not os.path.isdir(path):
                 continue
-            load_from_file(aircraft_directory, path)
+            try:
+                load_from_file(aircraft_directory, path)
+            except AttributeError:
+                continue
         self.populate_controls_list()
         self.profile_name_variable.set("unnamed profile")
 
     def export_dcs(self):
 
-        def store_to_file(path):
-            if not os.path.exists(path):
-                os.makedirs(path)
-            for filename in os.listdir(path):
+        def store_to_file(p, d):
+            if not os.path.exists(p):
+                os.makedirs(p)
+            for filename in os.listdir(p):
                 if self.selected_device.instance_guid.lower() in filename.lower():
-                    diff.store_to_file(os.path.join(path, filename))
+                    d.store_to_file(os.path.join(p, filename))
                     return
             # if there is no valid file there, create one
             filename = str(self.selected_device)
-            diff.store_to_file(os.path.join(path, filename))
+            d.store_to_file(os.path.join(p, filename))
 
         for aircraft, diff in self.diffs.items():
             path = os.path.join(
@@ -832,7 +960,8 @@ class BindingsFrame(customtkinter.CTkFrame):
                     title="DCS appears to be running!",
                     message=f"You must restart DCS for changes to take effect!",
                 )
-            store_to_file(path)
+            corrected_diff = diff - self.dpm.default_diffs[aircraft] - self.dpm.default_diffs["General"] - self.dpm.default_diffs["Common"]
+            store_to_file(path, corrected_diff)
 
     def import_swpf(self):
         path = filedialog.askopenfilename(
@@ -907,8 +1036,8 @@ class BindingsFrame(customtkinter.CTkFrame):
                     diff_dict = self.diffs[aircraft].axis_diffs
                 else:
                     diff_dict = self.diffs[aircraft].key_diffs
-                for command, keys in diff_dict.items():
-                    if control.raw_name in keys:
+                for command, entry in diff_dict.items():
+                    if control.raw_name in entry.active_controls:
                         self.controls[control] = command
                         command_name_list.append((aircraft, command))
                         # break
@@ -936,8 +1065,14 @@ class BindingsFrame(customtkinter.CTkFrame):
                 binding.bind('<Enter>', binding.configure,)
                 binding.grid(row=j, column=2, sticky="w")
 
-    def remove_binding(self, aircraft, command, key):
-        self.diffs[aircraft].clear_command_key(command, key)
+    def remove_binding(self, aircraft, command, control):
+        ans = messagebox.askyesnocancel(
+            title=f"Remove {command.name}",
+            message=f"Do you want to remove {command.name} from {control.raw_name} for {aircraft}?"
+        )
+        if not ans:
+            return
+        self.diffs[aircraft].remove_diff(command, DiffEntry(control.raw_name))
         self.populate_controls_list()
 
     def clear_diffs(self):

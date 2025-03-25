@@ -20,10 +20,6 @@ package.loaded["InputUtils"] = {
 Input = require("Input")
 InputUtils = require("InputUtils")
 
-default_assignments = {
-    default = {}
-}
-
 turnLocalizationHintsOn_				= false
 insideLocalizationHintsFuncCounter_	= 0
 insideExternalProfileFuncCounter_		= 0
