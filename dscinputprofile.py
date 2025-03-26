@@ -452,8 +452,26 @@ class DCSProfileManager:
         self.dcs_path = None
         self.dcs_savegames_path = None
         self.dcs_config_version = None
-        self.profiles = dict()
-        self.default_diffs = dict()
+        self._profiles = None
+        self._default_diffs = None
+
+    @property
+    def profiles(self):
+        if self._profiles is None:
+            if not self.load_profiles(appdata_path):
+                self._profiles = dict()
+                self._default_diffs = dict()
+                self.scan_for_profiles()
+        return self._profiles
+
+    @property
+    def default_diffs(self):
+        if self._default_diffs is None:
+            if not self.load_profiles(appdata_path):
+                self._profiles = dict()
+                self._default_diffs = dict()
+                self.scan_for_profiles()
+        return self._default_diffs
 
     def set_dcs_path(self, path):
         if not os.path.isdir(path):
@@ -507,12 +525,12 @@ class DCSProfileManager:
                 config = json.load(f)
         except json.decoder.JSONDecodeError:
             return False
-        self.profiles = config.get("commands", dict())
-        for aircraftname in self.profiles.keys():
-            self.extract_default_diff_from_profile(aircraftname)
         self.dcs_path = config.get("dcs_install_path", None)
         self.dcs_savegames_path = config.get("dcs_savegames_path", None)
         self.dcs_config_version = config.get("dcs_version", None)
+        self._profiles = config.get("commands", dict())
+        for aircraftname in self.profiles.keys():
+            self.extract_default_diff_from_profile(aircraftname)
         logging.info(f"dcs config loaded from  \"{filepath}\"")
         return True
 
@@ -528,7 +546,9 @@ class DCSProfileManager:
                 for combo in command["combos"]:
                     diff_entry.add_control(combo["key"])
                 diffs.add_diff(command_class(**command), diff_entry)
-        self.default_diffs[aircraftname] = diffs
+        if self._default_diffs is None:
+            self._default_diffs = dict()
+        self._default_diffs[aircraftname] = diffs
 
     def scan_for_profiles(self):
         def scan_mods_aircraft_dir(path):
@@ -564,41 +584,8 @@ class DCSProfileManager:
                         except Exception as e:
                             logging.debug(f"Exception when loading from {foundpath}: {e}")
 
-        def scan_config_input_dir(path):
-            if not os.path.isdir(path):
-                raise NotADirectoryError
-            for p in os.listdir(path):
-                subpath = os.path.join(path, p)
-                if os.path.isdir(subpath):
-                    scan_config_input_dir(subpath)
-                elif os.path.isfile(subpath) and p == "name.lua":
-                    foundpath = os.path.dirname(subpath)
-                    aircraftname = os.path.basename(foundpath)
-                    with open(os.path.join(foundpath, 'name.lua'), "r") as f:
-                        for line in f.readlines():
-                            if line.startswith("return"):
-                                aircraftname_pretty = line.split("'")[1].strip()
-                                break
-                    logging.debug(f"found aircraft controls for \"{aircraftname_pretty}\" in \"{foundpath}\"")
-                    default_lua_path = os.path.join(foundpath, 'joystick', 'default.lua')
-                    if not os.path.isfile(default_lua_path):
-                        return
-                    result = load_device_profile_from_file(
-                        default_lua_path,
-                        None,
-                        os.path.join(foundpath, r'joystick\\'),
-                        None,
-                        self.dcs_path
-                    )
-                    if isinstance(result, str):
-                        logging.error(f"could not load aircraft controls: {result}")
-                    else:
-                        result["aircraftname"] = aircraftname
-                        self.profiles[aircraftname_pretty] = result
-                        self.extract_default_diff_from_profile(aircraftname_pretty)
-
         scan_mods_aircraft_dir(os.path.join(self.dcs_path, 'Mods', 'aircraft'))
-        # scan_config_input_dir(os.path.join(self.dcs_path, 'Config', 'Input'))
+        self.store_profiles(appdata_path)
 
     def get_aircrafts(self):
         return self.profiles.keys()
@@ -670,20 +657,13 @@ class BindingsFrame(customtkinter.CTkFrame):
         title_row.grid(row=0)
         title_label = customtkinter.CTkLabel(master=title_row, text="DCS Input Profiles")
         title_label.grid(row=0, column=0, padx=pad, pady=pad)
-        self.load_profiles_button = customtkinter.CTkButton(
-            master=title_row,
-            text="\u21bb",
-            command=self.load_profiles,
-            width=30,
-        )
-        self.load_profiles_button.grid(row=0, column=1, padx=pad, pady=pad)
         self.settings_button = customtkinter.CTkButton(
             master=title_row,
             text="\u26ed",
             command=self.show_settings_popup,
             width=30,
         )
-        self.settings_button.grid(row=0, column=2, padx=pad, pady=pad)
+        self.settings_button.grid(row=0, column=1, padx=pad, pady=pad)
 
         top_button_row = customtkinter.CTkFrame(master=self)
         top_button_row.grid(row=1, sticky="ew")
@@ -693,17 +673,23 @@ class BindingsFrame(customtkinter.CTkFrame):
             values={
                 "...from *.swpf-file": self.import_swpf,
                 "...from DCS": self.import_dcs,
-                "...clear profile": self.clear_diffs,
             }
         )
         self.import_button.grid(row=0, column=0, padx=pad, pady=pad)
+        self.clear_button = customtkinter.CTkButton(
+            master=top_button_row,
+            text="Clear",
+            command=self.clear_diffs,
+            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"]
+        )
+        self.clear_button.grid(row=0, column=1, padx=pad, pady=pad)
         self.profile_name_variable = customtkinter.StringVar(value="unnamed profile")
         self.profile_name_entry = customtkinter.CTkEntry(
             master=top_button_row,
             textvariable=self.profile_name_variable,
             width=300
         )
-        self.profile_name_entry.grid(row=0, column=1, sticky="ew", padx=pad, pady=pad)
+        self.profile_name_entry.grid(row=0, column=2, sticky="ew", padx=pad, pady=pad)
 
         self.controls_frame = customtkinter.CTkScrollableFrame(self, width=500)
         self.controls_frame.grid(row=2, sticky="ns", padx=pad, pady=pad)
@@ -716,7 +702,8 @@ class BindingsFrame(customtkinter.CTkFrame):
             text="Share...",
             values={
                 "...to *.swpf-file": self.export_swpf
-            }
+            },
+            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"]
         )
         self.export_button.grid(row=0, column=0, padx=pad, pady=pad)
         self.save_to_savegames_button = customtkinter.CTkButton(
@@ -860,11 +847,9 @@ class BindingsFrame(customtkinter.CTkFrame):
         def load():
             new_dcs_path = dcs_path_selector.path.get()
             new_dcs_savegames_path = dcs_savegames_path_selector.path.get()
-            if old_dcs_path != new_dcs_path:
-                self.dpm.set_dcs_path(new_dcs_path)
-            if old_dcs_savegames_path != new_dcs_savegames_path:
-                self.dpm.set_dcs_savegames_path(new_dcs_savegames_path)
-            if old_dcs_path != new_dcs_path or old_dcs_savegames_path != new_dcs_savegames_path:
+            self.dpm.set_dcs_path(new_dcs_path)
+            self.dpm.set_dcs_savegames_path(new_dcs_savegames_path)
+            if old_dcs_path != new_dcs_path or old_dcs_savegames_path != new_dcs_savegames_path or len(self.dpm.profiles) == 0:
                 self.load_profiles()
             self.populate_controls_list()
             self.popup.destroy()
@@ -1037,7 +1022,6 @@ class BindingsFrame(customtkinter.CTkFrame):
 
     def load_profiles(self):
         self.dpm.scan_for_profiles()
-        self.dpm.store_profiles(appdata_path)
         self.last_aircraft_choice = None  # sorted(list(self.dpm.get_aircrafts()))[0]
 
     def populate_controls_list(self):
