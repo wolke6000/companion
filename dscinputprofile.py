@@ -1068,7 +1068,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                 binding = BindingButton(
                     master=controls_line_frame,
                     text=f"{aircraft.strip()}: {command.name.strip()}",
-                    command=lambda a=aircraft, c=command, k=control.raw_name: self.remove_binding(a, c, k),
+                    command=lambda a=aircraft, c=command, k=control: self.remove_binding(a, c, k),
                 )
                 binding.bind('<Enter>', binding.configure,)
                 binding.grid(row=j, column=2, sticky="w")
@@ -1076,7 +1076,7 @@ class BindingsFrame(customtkinter.CTkFrame):
     def remove_binding(self, aircraft, command, control):
         ans = messagebox.askyesnocancel(
             title=f"Remove {command.name}",
-            message=f"Do you want to remove {command.name} from {control.raw_name} for {aircraft}?"
+            message=f"Do you want to remove \"{command.name}\" from \"{control.raw_name}\" for \"{aircraft}\"?"
         )
         if not ans:
             return
@@ -1097,27 +1097,39 @@ class BindingsFrame(customtkinter.CTkFrame):
 
 
 
-class BindingButton(customtkinter.CTkButton):
+class BindingButton(customtkinter.CTkFrame):
 
     def __init__(self, master, **kwargs):
+        text = kwargs.pop("text", "")
+        command = kwargs.pop("command", None)
         super().__init__(
             master=master,
             bg_color=master._fg_color,
             fg_color=master._fg_color,
-            hover_color=master._fg_color,
-            border_color=master._fg_color,
             **kwargs,
         )
-
-    def _on_enter(self, event=None):
-        super()._on_enter(event=event)
-        self._font = customtkinter.CTkFont(overstrike=True)
-        self._update_font()
-
-    def _on_leave(self, event=None):
-        super()._on_leave(event=event)
-        self._font = customtkinter.CTkFont(overstrike=False)
-        self._update_font()
+        self._label = customtkinter.CTkLabel(
+            master=self,
+            text=text
+        )
+        self._label.grid(row=0, column=0, sticky="w")
+        button_size = 16
+        self._xbut = customtkinter.CTkButton(
+            master=self,
+            text="\u274C",
+            bg_color=self._fg_color,
+            fg_color=self._fg_color,
+            hover_color="red",
+            border_color=self._label._text_color,
+            command=command,
+            height=button_size,
+            width=button_size,
+            corner_radius=round(button_size/2),
+            border_width=1,
+            border_spacing=0,
+            font=(customtkinter.CTkFont(), 5),
+        )
+        self._xbut.grid(row=0, column=1, sticky="w", padx=3)
 
 
 def main():
