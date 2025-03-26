@@ -11,3 +11,6 @@ Learn more about the Switchology Modular Control Panel and/or get yourself a uni
 
 ## Contact
 f you have a question about developing, or you wish to contribute, please join the [Switchology Discord Server](https://discord.gg/hXNR7xBaY5)
+
+## License Information
+Icons by [Icons8.com](https://icons8.com)
