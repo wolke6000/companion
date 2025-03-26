@@ -695,11 +695,13 @@ class BindingsFrame(customtkinter.CTkFrame):
         )
         self.profile_name_entry.grid(row=0, column=2, sticky="ew", padx=pad, pady=pad)
 
-        self.controls_frame = customtkinter.CTkScrollableFrame(self, width=500)
-        self.controls_frame.grid(row=2, sticky="ns", padx=pad, pady=pad)
+        self.controls_frame = customtkinter.CTkScrollableFrame(self)
+        self.controls_frame.grid(row=2, sticky="nsew", padx=pad, pady=pad)
+        self.controls_frame.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
 
         bottom_button_row = customtkinter.CTkFrame(master=self)
+        bottom_button_row.grid_columnconfigure((0, 1), weight=1)
         bottom_button_row.grid(row=3, sticky="ew")
         self.export_button = PullDownButton(
             master=bottom_button_row,
@@ -710,14 +712,14 @@ class BindingsFrame(customtkinter.CTkFrame):
             fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"],
             image=icon("share"),
         )
-        self.export_button.grid(row=0, column=0, padx=pad, pady=pad)
+        self.export_button.grid(row=0, column=0, padx=pad, pady=pad, sticky="w")
         self.save_to_savegames_button = customtkinter.CTkButton(
             master=bottom_button_row,
             text="Push to DCS",
             command=self.export_dcs,
             image=icon("rocket")
         )
-        self.save_to_savegames_button.grid(row=0, column=1, padx=pad, pady=pad)
+        self.save_to_savegames_button.grid(row=0, column=1, padx=pad, pady=pad, sticky="e")
 
         self.popup = None
         self.selected_device = None
@@ -1056,8 +1058,9 @@ class BindingsFrame(customtkinter.CTkFrame):
                         # break
 
             controls_line_frame = customtkinter.CTkFrame(master=self.controls_frame)
+            controls_line_frame.grid_columnconfigure(1, weight=1)
             controls_line_frame.grid(row=i, column=0, sticky="ew", pady=3)
-            indicator = ControlIndicator(controls_line_frame, control)
+            indicator = ControlIndicator(controls_line_frame, control, width=100)
             indicator.grid(row=0, column=0, sticky="w", padx=pad, pady=pad)
             self.selected_device.add_subscriber(control, indicator.update_value)
             if self.open_popup_with_control:
@@ -1068,7 +1071,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                 command=lambda c=control: self.show_keybind_popup(c),
                 width=30
             )
-            button.grid(row=0, column=1, sticky="w", padx=pad, pady=pad)
+            button.grid(row=0, column=2, sticky="e", padx=pad, pady=pad)
             for j, (aircraft, command) in enumerate(command_name_list):
                 binding = BindingButton(
                     master=controls_line_frame,
@@ -1076,7 +1079,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                     command=lambda a=aircraft, c=command, k=control: self.remove_binding(a, c, k),
                 )
                 binding.bind('<Enter>', binding.configure,)
-                binding.grid(row=j, column=2, sticky="w")
+                binding.grid(row=j, column=1, sticky="w")
 
     def remove_binding(self, aircraft, command, control):
         ans = messagebox.askyesnocancel(
