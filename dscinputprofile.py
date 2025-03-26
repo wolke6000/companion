@@ -1067,9 +1067,10 @@ class BindingsFrame(customtkinter.CTkFrame):
                 self.selected_device.add_subscriber(control, self.open_popup_on_control)
             button = customtkinter.CTkButton(
                 master=controls_line_frame,
-                text="\uff0b",
+                text="",
                 command=lambda c=control: self.show_keybind_popup(c),
-                width=30
+                width=30,
+                image=icon("add", (15, 15))
             )
             button.grid(row=0, column=2, sticky="e", padx=pad, pady=pad)
             for j, (aircraft, command) in enumerate(command_name_list):
@@ -1124,7 +1125,7 @@ class BindingButton(customtkinter.CTkFrame):
         button_size = 16
         self._xbut = customtkinter.CTkButton(
             master=self,
-            text="\u274C",
+            text="",
             bg_color=self._fg_color,
             fg_color=self._fg_color,
             hover_color="red",
@@ -1132,10 +1133,11 @@ class BindingButton(customtkinter.CTkFrame):
             command=command,
             height=button_size,
             width=button_size,
-            corner_radius=round(button_size/2),
-            border_width=1,
+            # corner_radius=round(button_size/2),
+            # border_width=1,
             border_spacing=0,
             font=(customtkinter.CTkFont(), 5),
+            image=icon("remove", (12, 12))
         )
         self._xbut.grid(row=0, column=1, sticky="w", padx=3)
 
