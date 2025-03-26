@@ -17,6 +17,7 @@ from PullDownButton import PullDownButton
 import Switchology
 from Device import Device, ControlIndicator
 from gui import GUI, appdata_path, PathSelector
+from icon import icon
 
 pad = 3
 
@@ -659,9 +660,10 @@ class BindingsFrame(customtkinter.CTkFrame):
         title_label.grid(row=0, column=0, padx=pad, pady=pad)
         self.settings_button = customtkinter.CTkButton(
             master=title_row,
-            text="\u26ed",
+            text="",
             command=self.show_settings_popup,
             width=30,
+            image=icon("wrench")
         )
         self.settings_button.grid(row=0, column=1, padx=pad, pady=pad)
 
@@ -673,14 +675,16 @@ class BindingsFrame(customtkinter.CTkFrame):
             values={
                 "...from *.swpf-file": self.import_swpf,
                 "...from DCS": self.import_dcs,
-            }
+            },
+            image = icon("import"),
         )
         self.import_button.grid(row=0, column=0, padx=pad, pady=pad)
         self.clear_button = customtkinter.CTkButton(
             master=top_button_row,
             text="Clear",
             command=self.clear_diffs,
-            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"]
+            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"],
+            image=icon("clear"),
         )
         self.clear_button.grid(row=0, column=1, padx=pad, pady=pad)
         self.profile_name_variable = customtkinter.StringVar(value="unnamed profile")
@@ -703,13 +707,15 @@ class BindingsFrame(customtkinter.CTkFrame):
             values={
                 "...to *.swpf-file": self.export_swpf
             },
-            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"]
+            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"],
+            image=icon("share"),
         )
         self.export_button.grid(row=0, column=0, padx=pad, pady=pad)
         self.save_to_savegames_button = customtkinter.CTkButton(
             master=bottom_button_row,
             text="Push to DCS",
             command=self.export_dcs,
+            image=icon("rocket")
         )
         self.save_to_savegames_button.grid(row=0, column=1, padx=pad, pady=pad)
 
