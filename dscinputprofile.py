@@ -77,6 +77,35 @@ def load_keydiffs(filepath):
 
 luatabletype = type(lupa.LuaRuntime().table())
 
+axes = ["X", "Y", "Z", "RX", "RY", "RZ"]
+
+def change_control_names_dcs_to_pyglet(value):
+    if not isinstance(value, str):
+        return value
+    if "JOY_BTN" in value:
+        try:
+            return "Button " + str(int(value.replace("JOY_BTN", "")) - 1)
+        except ValueError:
+            return value
+    else:
+        for axis in axes:
+            if value == f"JOY_{axis}":
+                value = f"{axis} Axis"
+                return value
+    return value
+
+
+def change_control_names_pyglet_to_dcs(value):
+    if not isinstance(value, str):
+        return value
+    if "Button" in value:
+        return "JOY_BTN" + str(int(value.replace("Button ", "")) + 1)
+    else:
+        for axis in axes:
+            if value == f"{axis} Axis":
+                value = f"JOY_{axis}"
+                return value
+    return value
 
 def lua_to_py(luatable):
     if not isinstance(luatable, luatabletype):
@@ -94,7 +123,7 @@ def lua_to_py(luatable):
             if isinstance(dkey, int):
                 extra_categories.append(ds[str(dkey)])
             else:
-                dso[dkey] = lua_to_py(ds[dkey])
+                dso[dkey] = change_control_names_dcs_to_pyglet(lua_to_py(ds[dkey]))
         if len(extra_categories) > 0:
             extra_categories.append(dso["category"])
             dso["category"] = extra_categories
@@ -219,7 +248,11 @@ class KeyCommand(Command):
 class AxisCommand(Command):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.action = kwargs.get('action', None)
+        if "hash" in kwargs.keys():
+            self.action = kwargs["hash"].split('a', maxsplit=1)[-1].split("cd")[0]
+            self.cockpit_device_id = kwargs["hash"].split('cd', maxsplit=1)[-1]
+        elif "action" in kwargs.keys():
+            self.action = kwargs["action"]
 
     def commandhash(self):
         return f"a{self.action}cd{self.cockpit_device_id}"
@@ -277,20 +310,15 @@ class DiffEntry:
         return self._controls_added - self._controls_removed
 
     def to_dict(self):
-        def rename_control(control):
-            if "Button" in control:
-                return "JOY_BTN" + str(int(control.replace("Button ", "")) + 1)
-            else:
-                return control
         retval = dict()
         if len(self._controls_added) > 0:
             retval["added"] = dict()
             for i, added in enumerate(self._controls_added):
-                retval["added"][i+1] = {"key": rename_control(added)}
+                retval["added"][i+1] = {"key": change_control_names_pyglet_to_dcs(added)}
         if len(self._controls_removed) > 0:
             retval["removed"] = dict()
             for i, removed in enumerate(self._controls_removed):
-                retval["removed"][i+1] = {"key": rename_control(removed)}
+                retval["removed"][i+1] = {"key": change_control_names_pyglet_to_dcs(removed)}
         return retval
 
 
@@ -379,23 +407,15 @@ class Diff:
         return retval
 
     def from_dict(self, origin_dict):
-        def rename_keys(key):
-            if "JOY_BTN" in key:
-                try:
-                    return "Button " + str(int(key.replace("JOY_BTN", ""))-1)
-                except ValueError:
-                    return key
-            return key
-
-        for diffs_key in ["axisDiffs", "keyDiffs"]:
+        for diffs_key, command_type in [("axisDiffs", AxisCommand), ("keyDiffs", KeyCommand)]:
             if diffs_key in origin_dict.keys():
                 for keydiff in origin_dict[diffs_key].keys():
                     name = origin_dict[diffs_key][keydiff]["name"]
                     for operation, operation_key in [(self.add_diff, "added"), (self.remove_diff, "removed")]:
                         if operation_key in origin_dict[diffs_key][keydiff].keys():
                             for item in origin_dict[diffs_key][keydiff][operation_key].keys():
-                                key = rename_keys(origin_dict[diffs_key][keydiff][operation_key][item]["key"])
-                                operation(KeyCommand(hash=keydiff, name=name), DiffEntry(rename_keys(key)))
+                                key = origin_dict[diffs_key][keydiff][operation_key][item]["key"]
+                                operation(command_type(hash=keydiff, name=name), DiffEntry(change_control_names_dcs_to_pyglet(key)))
 
     def __add__(self, other: "Diff"):
         result = Diff()
@@ -478,13 +498,6 @@ class DCSProfileManager:
             )
 
     def load_profiles(self, path):
-        def rename_keys(key):
-            if "JOY_BTN" in key:
-                try:
-                    return "Button " + str(int(key.replace("JOY_BTN", ""))-1)
-                except ValueError:
-                    pass
-            return key
         filepath = os.path.join(path, "dcs_config.json")
         if not os.path.isfile(filepath):
             logging.warning(f"could not find dcs config in \"{filepath}\"")
@@ -495,11 +508,27 @@ class DCSProfileManager:
         except json.decoder.JSONDecodeError:
             return False
         self.profiles = config.get("commands", dict())
+        for aircraftname in self.profiles.keys():
+            self.extract_default_diff_from_profile(aircraftname)
         self.dcs_path = config.get("dcs_install_path", None)
         self.dcs_savegames_path = config.get("dcs_savegames_path", None)
         self.dcs_config_version = config.get("dcs_version", None)
         logging.info(f"dcs config loaded from  \"{filepath}\"")
         return True
+
+    def extract_default_diff_from_profile(self, aircraftname: str):
+        diffs = Diff()
+        for command_class, command_class_key in [(KeyCommand, "keyCommands"), (AxisCommand, "axisCommands")]:
+            if command_class_key not in self.profiles[aircraftname]:
+                continue
+            for command in self.profiles[aircraftname][command_class_key]:
+                if not "combos" in command:
+                    continue
+                diff_entry = DiffEntry()
+                for combo in command["combos"]:
+                    diff_entry.add_control(combo["key"])
+                diffs.add_diff(command_class(**command), diff_entry)
+        self.default_diffs[aircraftname] = diffs
 
     def scan_for_profiles(self):
         def scan_mods_aircraft_dir(path):
@@ -531,17 +560,7 @@ class DCSProfileManager:
                                 else:
                                     result["aircraftname"] = aircraftname
                                     self.profiles[aircraftname_pretty] = result
-                                    self.default_diffs[aircraftname_pretty] = Diff()
-                                    for command_class, command_class_key in [(KeyCommand, "keyCommands"), (AxisCommand, "axisCommands")]:
-                                        if command_class_key not in self.profiles[aircraftname_pretty]:
-                                            continue
-                                        for command in self.profiles[aircraftname_pretty][command_class_key]:
-                                            if not "combos" in command:
-                                                continue
-                                            diff_entry = DiffEntry()
-                                            for combo in command["combos"]:
-                                                diff_entry.add_control(combo["key"])
-                                            self.default_diffs[aircraftname_pretty].add_diff(command_class(**command), diff_entry)
+                                    self.extract_default_diff_from_profile(aircraftname_pretty)
                         except Exception as e:
                             logging.debug(f"Exception when loading from {foundpath}: {e}")
 
@@ -576,21 +595,10 @@ class DCSProfileManager:
                     else:
                         result["aircraftname"] = aircraftname
                         self.profiles[aircraftname_pretty] = result
-                        self.default_diffs[aircraftname_pretty] = Diff()
-                        for command_class, command_class_key in [(KeyCommand, "keyCommands"),
-                                                                 (AxisCommand, "axisCommands")]:
-                            if command_class_key not in  self.profiles[aircraftname_pretty]:
-                                continue
-                            for command in self.profiles[aircraftname_pretty][command_class_key]:
-                                if not "combos" in command:
-                                    continue
-                                diff_entry = DiffEntry()
-                                for combo in command["combos"]:
-                                    diff_entry.add_control(combo["key"])
-                                self.default_diffs[aircraftname_pretty].add_diff(command_class(**command), diff_entry)
+                        self.extract_default_diff_from_profile(aircraftname_pretty)
 
         scan_mods_aircraft_dir(os.path.join(self.dcs_path, 'Mods', 'aircraft'))
-        scan_config_input_dir(os.path.join(self.dcs_path, 'Config', 'Input'))
+        # scan_config_input_dir(os.path.join(self.dcs_path, 'Config', 'Input'))
 
     def get_aircrafts(self):
         return self.profiles.keys()
@@ -899,7 +907,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                     if a_name is None:
                         return
                     if a_dir in self.diffs.keys():
-                        self.diffs[a_name].clear()
+                        pass
                     else:
                         self.diffs[a_name] = Diff()
                     self.diffs[a_name].load_from_file(os.path.join(a_path, filename))
@@ -960,7 +968,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                     title="DCS appears to be running!",
                     message=f"You must restart DCS for changes to take effect!",
                 )
-            corrected_diff = diff - self.dpm.default_diffs[aircraft] - self.dpm.default_diffs["General"] - self.dpm.default_diffs["Common"]
+            corrected_diff = diff - self.dpm.default_diffs[aircraft]
             store_to_file(path, corrected_diff)
 
     def import_swpf(self):
