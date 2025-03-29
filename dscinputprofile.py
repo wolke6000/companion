@@ -729,11 +729,19 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.controls = dict()
         self.diffs: dict[str, Diff] = dict()
         self.open_popup_with_control = False
+        self.dcs_unimported = True
 
         if not profiles_found:
             self.after(100, self.show_settings_popup)
         elif self.dpm.dcs_config_version != self.dpm.get_dcs_version():
             self.load_profiles()
+
+    def refresh(self):
+        if self.dcs_unimported:
+            self.import_dcs()
+            self.dcs_unimported = False
+        self.populate_controls_list()
+
 
     def show_keybind_popup(self, control):
 
@@ -922,6 +930,8 @@ class BindingsFrame(customtkinter.CTkFrame):
                     return
             logging.debug(f"no input profile found for \"{self.selected_device}\" and \"{a_dir}\"")
 
+        if self.selected_device is None:
+            return
         if any(diff.unsaved_changes for diff in self.diffs.values()):
             ans = messagebox.askokcancel(
                 "Warning",
