@@ -151,6 +151,15 @@ class DeviceListFrame(customtkinter.CTkFrame):
         self.selected_device_index = None
         self._command = command
 
+        self.after(200, self.select_initial_device)
+
+    def select_initial_device(self):
+        for i, device in enumerate(self.devices):
+            if issubclass(type(device), SwitchologyDevice):
+                self.select(i)
+        if not self.selected_device_index and len(self.devices) > 0:
+            self.select(0)
+
     def select(self, device_index):
         if len(self.device_buttons) == 0:
             return

@@ -383,6 +383,7 @@ class Diff:
         with open(filepath, "r") as f:
             filecontent = "".join(f.readlines())
         self.from_lua_table(filecontent.replace("local diff = ", "").replace("\nreturn diff", ""))
+        self.unsaved_changes = False
         logging.info(f"input profile loaded from \"{filepath}\"")
 
     def to_dict(self):
@@ -638,76 +639,6 @@ class BindingsFrame(customtkinter.CTkFrame):
     def __init__(self, master: GUI, **kwargs):
         super().__init__(master, **kwargs)
 
-        self.dpm = DCSProfileManager()
-        profiles_found = self.dpm.load_profiles(appdata_path)
-
-        title_row = customtkinter.CTkFrame(master=self)
-        title_row.grid(row=0)
-        title_label = customtkinter.CTkLabel(master=title_row, text="DCS Input Profiles")
-        title_label.grid(row=0, column=0, padx=pad, pady=pad)
-        self.settings_button = customtkinter.CTkButton(
-            master=title_row,
-            text="",
-            command=self.show_settings_popup,
-            width=30,
-            image=icon("wrench")
-        )
-        self.settings_button.grid(row=0, column=1, padx=pad, pady=pad)
-
-        top_button_row = customtkinter.CTkFrame(master=self)
-        top_button_row.grid(row=1, sticky="ew")
-        self.import_button = PullDownButton(
-            master=top_button_row,
-            text="Load...",
-            values={
-                "...from *.swpf-file": self.import_swpf,
-                "...from DCS": self.import_dcs,
-            },
-            image = icon("import"),
-        )
-        self.import_button.grid(row=0, column=0, padx=pad, pady=pad)
-        self.clear_button = customtkinter.CTkButton(
-            master=top_button_row,
-            text="Clear",
-            command=self.clear_diffs,
-            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"],
-            image=icon("clear"),
-        )
-        self.clear_button.grid(row=0, column=1, padx=pad, pady=pad)
-        self.profile_name_variable = customtkinter.StringVar(value="unnamed profile")
-        self.profile_name_entry = customtkinter.CTkEntry(
-            master=top_button_row,
-            textvariable=self.profile_name_variable,
-            width=300
-        )
-        self.profile_name_entry.grid(row=0, column=2, sticky="ew", padx=pad, pady=pad)
-
-        self.controls_frame = customtkinter.CTkScrollableFrame(self)
-        self.controls_frame.grid(row=2, sticky="nsew", padx=pad, pady=pad)
-        self.controls_frame.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
-
-        bottom_button_row = customtkinter.CTkFrame(master=self)
-        bottom_button_row.grid_columnconfigure((0, 1), weight=1)
-        bottom_button_row.grid(row=3, sticky="ew")
-        self.export_button = PullDownButton(
-            master=bottom_button_row,
-            text="Share...",
-            values={
-                "...to *.swpf-file": self.export_swpf
-            },
-            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"],
-            image=icon("share"),
-        )
-        self.export_button.grid(row=0, column=0, padx=pad, pady=pad, sticky="w")
-        self.save_to_savegames_button = customtkinter.CTkButton(
-            master=bottom_button_row,
-            text="Push to DCS",
-            command=self.export_dcs,
-            image=icon("rocket")
-        )
-        self.save_to_savegames_button.grid(row=0, column=1, padx=pad, pady=pad, sticky="e")
-
         self.popup = None
         self.selected_device = None
         self.last_aircraft_choice = None
@@ -717,16 +648,118 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.diffs: dict[str, Diff] = dict()
         self.open_popup_with_control = False
         self.dcs_unimported = True
+        self.dpm = DCSProfileManager()
+        self.profile_name_variable = customtkinter.StringVar(value="unnamed profile")
+        self.controls_frame = None
 
-        if not profiles_found:
-            self.after(100, self.show_settings_popup)
-        elif self.dpm.dcs_config_version != self.dpm.get_dcs_version():
-            self.load_profiles()
+        self.activated = False
+        filepath = os.path.join(appdata_path, "plugins.json")
+        if not os.path.isfile(filepath):
+            logging.warning(f"could not find dcs config in \"{filepath}\"")
+        else:
+            try:
+                with open(filepath, "r") as f:
+                    config = json.load(f)
+                self.activated = config.get("dcs_activated", False)
+            except json.decoder.JSONDecodeError:
+                logging.warning(f"could not read dcs config in \"{filepath}\"")
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        for child in self.winfo_children():
+            child.destroy()
+        if not self.activated:
+            customtkinter.CTkLabel(
+                master=self,
+                text=f"DCS plugin is not activated.\nGo to settings to activate!"
+            ).grid()
+            customtkinter.CTkButton(
+                master=self,
+                text="",
+                command=self.show_settings_popup,
+                width=30,
+                image=icon("wrench")
+            ).grid()
+            return
+        profiles_found = self.dpm.load_profiles(appdata_path)
+
+        title_row = customtkinter.CTkFrame(master=self)
+        title_row.grid(row=0)
+        title_label = customtkinter.CTkLabel(master=title_row, text="DCS Input Profiles")
+        title_label.grid(row=0, column=0, padx=pad, pady=pad)
+        settings_button = customtkinter.CTkButton(
+            master=title_row,
+            text="",
+            command=self.show_settings_popup,
+            width=30,
+            image=icon("wrench")
+        )
+        settings_button.grid(row=0, column=1, padx=pad, pady=pad)
+
+        top_button_row = customtkinter.CTkFrame(master=self)
+        top_button_row.grid(row=1, sticky="ew")
+        import_button = PullDownButton(
+            master=top_button_row,
+            text="Load...",
+            values={
+                "...from *.swpf-file": self.import_swpf,
+                "...from DCS": self.import_dcs,
+            },
+            image = icon("import"),
+        )
+        import_button.grid(row=0, column=0, padx=pad, pady=pad)
+        clear_button = customtkinter.CTkButton(
+            master=top_button_row,
+            text="Clear",
+            command=self.clear_diffs,
+            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"],
+            image=icon("clear"),
+        )
+        clear_button.grid(row=0, column=1, padx=pad, pady=pad)
+        profile_name_entry = customtkinter.CTkEntry(
+            master=top_button_row,
+            textvariable=self.profile_name_variable,
+            width=300
+        )
+        profile_name_entry.grid(row=0, column=2, sticky="ew", padx=pad, pady=pad)
+
+        self.controls_frame = customtkinter.CTkScrollableFrame(self)
+        self.controls_frame.grid(row=2, sticky="nsew", padx=pad, pady=pad)
+        self.controls_frame.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(2, weight=1)
+
+        bottom_button_row = customtkinter.CTkFrame(master=self)
+        bottom_button_row.grid_columnconfigure((0, 1), weight=1)
+        bottom_button_row.grid(row=3, sticky="ew")
+        export_button = PullDownButton(
+            master=bottom_button_row,
+            text="Share...",
+            values={
+                "...to *.swpf-file": self.export_swpf
+            },
+            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"],
+            image=icon("share"),
+        )
+        export_button.grid(row=0, column=0, padx=pad, pady=pad, sticky="w")
+        save_to_savegames_button = customtkinter.CTkButton(
+            master=bottom_button_row,
+            text="Push to DCS",
+            command=self.export_dcs,
+            image=icon("rocket")
+        )
+        save_to_savegames_button.grid(row=0, column=1, padx=pad, pady=pad, sticky="e")
+        # if not profiles_found:
+        #     self.after(100, self.show_settings_popup)
+        # elif self.dpm.dcs_config_version != self.dpm.get_dcs_version():
+        #     self.load_profiles()
+        self.refresh()
 
     def refresh(self):
+        if not self.activated:
+            return
         if self.dcs_unimported:
             self.import_dcs()
-            self.dcs_unimported = False
         self.populate_controls_list()
 
 
@@ -739,6 +772,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                 self.selected_category = category_selection.get()
             command_filter_var.trace_remove("write", cb_name)
             self.popup.destroy()
+            self.popup = None
 
         def bind(command, key):
             if aircraft_selection.get() not in self.diffs.keys():
@@ -847,15 +881,33 @@ class BindingsFrame(customtkinter.CTkFrame):
             switch_category(self.selected_category)
 
     def show_settings_popup(self):
-        def load():
+        def apply():
+            self.popup.destroy()
+            self.popup = None
             new_dcs_path = dcs_path_selector.path.get()
             new_dcs_savegames_path = dcs_savegames_path_selector.path.get()
-            self.dpm.set_dcs_path(new_dcs_path)
-            self.dpm.set_dcs_savegames_path(new_dcs_savegames_path)
-            if old_dcs_path != new_dcs_path or old_dcs_savegames_path != new_dcs_savegames_path or len(self.dpm.profiles) == 0:
-                self.load_profiles()
+            if activated != self.activated:
+                filepath = os.path.join(appdata_path, "plugins.json")
+                plugins_dict = dict()
+                if not os.path.isfile(filepath):
+                    logging.warning(f"could not find dcs config in \"{filepath}\"")
+                else:
+                    try:
+                        with open(filepath, "r") as f:
+                            plugins_dict = json.load(f)
+                    except json.decoder.JSONDecodeError:
+                        logging.warning(f"could not read dcs config in \"{filepath}\"")
+                plugins_dict["dcs_activated"] = bool(self.activated)
+                with open(filepath, "w") as f:
+                    json.dump(plugins_dict, f, indent=4)
+            if self.activated:
+                self.dpm.set_dcs_path(new_dcs_path)
+                self.dpm.set_dcs_savegames_path(new_dcs_savegames_path)
+                if old_dcs_path != new_dcs_path or old_dcs_savegames_path != new_dcs_savegames_path or len(self.dpm.profiles) == 0:
+                    self.load_profiles()
+            self.create_widgets()
+            self.import_dcs()
             self.populate_controls_list()
-            self.popup.destroy()
 
         def back_on_top():
             if self.popup is not None and self.popup.winfo_exists():
@@ -863,17 +915,40 @@ class BindingsFrame(customtkinter.CTkFrame):
                     self.popup.lift()
                 self.popup.after(100, back_on_top)
 
-        def switch_callback():
+        def open_with_controls_switch_callback():
             self.open_popup_with_control = open_popup_with_control_switch.get()
+
+        def activate_switch_callback():
+            self.activated = activate_switch.get()
+            de_activate()
+
+        def de_activate():
+            if self.activated:
+                open_popup_with_control_switch.configure(state="normal")
+                dcs_path_selector.configure(state="normal")
+                dcs_savegames_path_selector.configure(state="normal")
+            else:
+                open_popup_with_control_switch.configure(state="disabled")
+                dcs_path_selector.configure(state="disabled")
+                dcs_savegames_path_selector.configure(state="disabled")
 
         if self.popup is None or not self.popup.winfo_exists():
 
             self.popup = customtkinter.CTkToplevel(self)
             self.popup.title(f"Configure DCS Paths")
+            activated = self.activated
 
-            label = customtkinter.CTkLabel(self.popup,
-                                           text="Please specify DCS paths")
-            label.grid(sticky="ew")
+            activate_switch = customtkinter.CTkSwitch(
+                master=self.popup,
+                text="Activate DCS profile plugin",
+                command=activate_switch_callback,
+
+            )
+            if self.activated:
+                activate_switch.select()
+            else:
+                activate_switch.deselect()
+            activate_switch.grid(sticky="w")
 
             dcs_path_selector = PathSelector(self.popup, path=find_dcs_install_path(), title="DCS path")
             old_dcs_path = dcs_path_selector.path.get()
@@ -887,16 +962,18 @@ class BindingsFrame(customtkinter.CTkFrame):
             open_popup_with_control_switch = customtkinter.CTkSwitch(
                 master=self.popup,
                 text="Open bindings popup when pressing device buttons",
-                command=switch_callback,
+                command=open_with_controls_switch_callback,
             )
             if self.open_popup_with_control:
                 open_popup_with_control_switch.select()
             else:
                 open_popup_with_control_switch.deselect()
-            open_popup_with_control_switch.grid()
+            open_popup_with_control_switch.grid(sticky="w")
 
-            save_settings_button = customtkinter.CTkButton(self.popup, text="Save settings", command=load)
+            save_settings_button = customtkinter.CTkButton(self.popup, text="Save settings", command=apply)
             save_settings_button.grid()
+
+            de_activate()
 
             back_on_top()
 
@@ -927,6 +1004,9 @@ class BindingsFrame(customtkinter.CTkFrame):
             )
             if not ans:
                 return
+        if self.dpm.dcs_savegames_path is None or self.dpm.dcs_path is None:
+            self.show_settings_popup()
+            return
         config_input_path = os.path.join(
             self.dpm.dcs_savegames_path,
             "Config",
@@ -946,6 +1026,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                 continue
         self.populate_controls_list()
         self.profile_name_variable.set("unnamed profile")
+        self.dcs_unimported = False
 
     def export_dcs(self):
 
@@ -1037,6 +1118,8 @@ class BindingsFrame(customtkinter.CTkFrame):
                 destroy_children(child)
                 child.destroy()
 
+        if not self.activated:
+            return
         destroy_children(self.controls_frame)
         if self.selected_device is None:
             return
