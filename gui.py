@@ -196,6 +196,11 @@ class PathSelector(customtkinter.CTkFrame):
         self.grid_columnconfigure(1, weight=1)
         self.dialog_open = False
 
+    def configure(self, require_redraw=False, **kwargs):
+        self.label.configure(require_redraw, **kwargs)
+        self.entry.configure(require_redraw, **kwargs)
+        self.button.configure(require_redraw, **kwargs)
+
     def change_path_clicked(self):
         self.dialog_open = True
         path = filedialog.askdirectory(
