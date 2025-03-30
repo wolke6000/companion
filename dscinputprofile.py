@@ -63,19 +63,6 @@ def find_dcs_install_path():
     return installdir
 
 
-def load_keydiffs(filepath):
-    with open(filepath, "r") as f:
-        filecontents = "".join(f.readlines())
-
-    t = filecontents.replace("local diff = {", "diff = {").strip()
-    for t_old in ["return diff", "\n", "\t"]:
-        t = t.replace(t_old, "")
-    slpp = SLPP()
-    b = slpp.decode("{" + t + "}")
-
-    return b
-
-
 luatabletype = type(lupa.LuaRuntime().table())
 
 axes = ["X", "Y", "Z", "RX", "RY", "RZ"]
