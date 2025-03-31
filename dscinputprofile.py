@@ -16,7 +16,7 @@ from PullDownButton import PullDownButton
 
 import Switchology
 from Device import Device, ControlIndicator
-from gui import GUI, appdata_path, PathSelector
+from gui import GUI, appdata_path, PathSelector, get_devices
 from icon import icon
 
 pad = 3
@@ -333,6 +333,7 @@ class Diff:
         self.axis_diffs = dict()
         self.key_diffs = dict()
         self.unsaved_changes = False
+        self.embedded_dict = dict()
 
     def clear(self, reset_unsaved_changes=False):
         if reset_unsaved_changes:
@@ -375,13 +376,20 @@ class Diff:
 
     def store_to_file(self, filepath):
         with open(filepath, "w") as f:
+            if self.embedded_dict:
+                f.write(f"--- @@@SWED@@@{json.dumps(self.embedded_dict)}\n\n")
             f.write("local diff = " + self.to_lua_table() + "\nreturn diff")
         self.unsaved_changes = False
         logging.info(f"input profile stored to \"{filepath}\"")
 
     def load_from_file(self, filepath):
+        filecontent = ""
         with open(filepath, "r") as f:
-            filecontent = "".join(f.readlines())
+            for line in f.readlines():
+                if "--- @@@SWED@@@" in line:
+                    self.embedded_dict = json.loads(line.replace("--- @@@SWED@@@", ""))
+                else:
+                    filecontent += line
         self.from_lua_table(filecontent.replace("local diff = ", "").replace("\nreturn diff", ""))
         self.unsaved_changes = False
         logging.info(f"input profile loaded from \"{filepath}\"")
@@ -979,19 +987,54 @@ class BindingsFrame(customtkinter.CTkFrame):
 
     def import_dcs(self):
 
+        def assign_diff(a_dir, diff):
+            a_name = self.dpm.get_aircraft_for_directory(a_dir)
+            self.diffs[a_name] = diff
+
         def load_from_file(a_dir, a_path):
             logging.debug(f"looking for input profile in {a_path}")
+
+            # 1. get all profiles in this directory with their devices serial numbers, if available
+            by_serial: dict[str | None, list] = dict()
             for filename in os.listdir(a_path):
-                if self.selected_device.instance_guid.lower() in filename.lower():
-                    a_name = self.dpm.get_aircraft_for_directory(a_dir)
-                    if a_name is None:
-                        return
-                    if a_dir in self.diffs.keys():
-                        pass
-                    else:
-                        self.diffs[a_name] = Diff()
-                    self.diffs[a_name].load_from_file(os.path.join(a_path, filename))
-                    return
+                try:
+                    guid = filename.split("{")[1].split("}")[0]
+                except IndexError:
+                    continue
+                diff = Diff()
+                diff.load_from_file(os.path.join(a_path, filename))
+                diff_device_serial_number: str | None = diff.embedded_dict.get("device_serial_number", None)
+                if diff_device_serial_number not in by_serial.keys():
+                    by_serial[diff_device_serial_number] = list()
+                by_serial[diff_device_serial_number].append({"filename": filename, "guid": guid, "diff": diff})
+
+            # 2a. check for selected device, if the serial number matches the current GUID
+            if self.selected_device.serial_number in by_serial.keys():
+                guid = by_serial[self.selected_device.serial_number][0]["guid"].lower()
+                if guid != self.selected_device.instance_guid.lower():
+                    # 3. if serial numbers don't match, try to repair
+                    if messagebox.askyesnocancel(
+                        title="Warning",
+                        message=f"Device GUID \"{guid}\" and Serial Number \"{self.selected_device.serial_number}\" "
+                                f"don't match for profile \"{a_dir}\". Repair it?",
+                        parent=self
+                    ):
+                        for device in get_devices():
+                            if device.serial_number in by_serial.keys():
+                                filename = str(self.selected_device)
+                                logging.info(f"storing diff for S/N: \"{device.serial_number}\" as \"{filename}\"")
+                                by_serial[device.serial_number][0]["diff"].store_to_file(os.path.join(a_path, filename))
+
+                assign_diff(a_dir, by_serial[self.selected_device.serial_number][0]["diff"])
+                return
+            # 2b. if there is no profile with the selected device's serial number, try to use the one with the GUID
+            else:
+                for values in by_serial.values():
+                    for value in values:
+                        if value["guid"].lower() == self.selected_device.instance_guid.lower():
+                            assign_diff(a_dir, value["diff"])
+                            return
+
             logging.debug(f"no input profile found for \"{self.selected_device}\" and \"{a_dir}\"")
 
         if self.selected_device is None:
@@ -1031,6 +1074,7 @@ class BindingsFrame(customtkinter.CTkFrame):
     def export_dcs(self):
 
         def store_to_file(p, d):
+            d.embedded_dict = {"device_serial_number": self.selected_device.serial_number}
             if not os.path.exists(p):
                 os.makedirs(p)
             for filename in os.listdir(p):
@@ -1039,7 +1083,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                     return
             # if there is no valid file there, create one
             filename = str(self.selected_device)
-            d.store_to_file(os.path.join(p, filename))
+            d.store_to_file(os.path.join(p, filename), {"device_serial_number": self.selected_device.serial_number})
 
         for aircraft, diff in self.diffs.items():
             path = os.path.join(
