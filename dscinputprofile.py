@@ -840,6 +840,8 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.popup.title(f"Configure command for {control.raw_name}")
         self.popup.after(100, self.popup.lift)
         self.popup.focus()
+        self.popup.grid_columnconfigure(index=(0,1,2), weight=1)
+        self.popup.grid_rowconfigure(index=2, weight=1)
         aircraft_label = customtkinter.CTkLabel(
             master=self.popup,
             text="Aircraft"
@@ -880,9 +882,10 @@ class BindingsFrame(customtkinter.CTkFrame):
             master=self.popup,
             textvariable=command_filter_var,
         )
-        command_filter_entry.grid(row=1, column=2, padx=pad, pady=pad)
+        command_filter_entry.grid(row=1, column=2, sticky="ew", padx=pad, pady=pad)
         bindings_frame = customtkinter.CTkScrollableFrame(self.popup, width=350)
-        bindings_frame.grid(row=2, column=0, columnspan=3, sticky="ns", padx=pad, pady=pad)
+        bindings_frame.columnconfigure(index=0, weight=1)
+        bindings_frame.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=pad, pady=pad)
         if issubclass(type(control), AbsoluteAxis):
             switch_category(axes_category_str)
         else:
