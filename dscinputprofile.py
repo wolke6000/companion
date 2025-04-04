@@ -473,6 +473,16 @@ class DCSProfileManager:
         self.dcs_config_version = None
         self._profiles = None
         self._default_diffs = None
+        self.diffs_by_guid: dict[str, dict[str, Diff]] = dict()
+        self.diffs_by_serial: dict[str, dict[str, Diff]] = dict()
+        self.dcs_imported = False
+
+    def get_diffs_for_device(self, device:Device):
+        # if device.serial_number is not None:
+        #     if device.serial_number.lower() in self.diffs_by_serial.keys():
+        #         return self.diffs_by_serial[device.serial_number.lower()]
+        if device.instance_guid.lower() in self.diffs_by_guid.keys():
+            return self.diffs_by_guid[device.instance_guid.lower()]
 
     @property
     def profiles(self):
@@ -662,6 +672,109 @@ class DCSProfileManager:
             if item["aircraftname"] == aircraftname:
                 return key
 
+    def import_dcs(self):
+        if self.dcs_savegames_path is None or self.dcs_path is None:
+            raise Exception  # todo: define exception for paths not set
+        # if any(any(diff.unsaved_changes for diff in self.diffs[device].values()) for device in self.diffs.keys()):
+        #     ans = messagebox.askokcancel(
+        #         "Warning",
+        #         "Your profile has unsaved changes! If you continue, those will be lost!",
+        #         parent=self
+        #     )
+        #     if not ans:
+        #         return
+        config_input_path = os.path.join(
+            self.dcs_savegames_path,
+            "Config",
+            "Input",
+        )
+        for aircraft_directory in os.listdir(config_input_path):
+            path = os.path.join(
+                config_input_path,
+                aircraft_directory,
+                "Joystick",
+            )
+            aircraft_name = self.get_aircraft_for_directory(aircraft_directory)
+            if not os.path.isdir(path):
+                continue
+            for filename in os.listdir(path):
+                filepath = os.path.join(path, filename)
+                diff = Diff()
+                diff.load_from_file(filepath)
+                if diff.guid is not None:
+                    guid = diff.guid.lower()
+                    if guid not in self.diffs_by_guid.keys():
+                        self.diffs_by_guid[guid] = dict()
+                    self.diffs_by_guid[guid][aircraft_name] = diff
+                if diff.serial is not None:
+                    serial = diff.serial.lower()
+                    if serial not in self.diffs_by_serial.keys():
+                        self.diffs_by_serial[serial] = dict()
+                    self.diffs_by_serial[serial][aircraft_name] = diff
+        self.dcs_imported = True
+
+    def export_dcs(self, device):
+
+        def store_to_file(dev:Device, p, d):
+            d.embedded_dict = {"device_serial_number": dev.serial_number}
+            if not os.path.exists(p):
+                os.makedirs(p)
+            for filename in os.listdir(p):
+                if dev.instance_guid.lower() in filename.lower():
+                    d.store_to_file(os.path.join(p, filename))
+                    return
+            # if there is no valid file there, create one
+            filename = str(dev)
+            d.serial = dev.serial_number
+            d.store_to_file(os.path.join(p, filename))
+
+        for aircraft, diff in self.get_diffs_for_device(device).items():
+            path = os.path.join(
+                self.dcs_savegames_path,
+                "Config",
+                "Input",
+                self.profiles[aircraft]["aircraftname"],
+                "Joystick"
+            )
+            if self.check_if_dcs_is_running():
+                messagebox.showwarning(
+                    title="DCS appears to be running!",
+                    message=f"You must restart DCS for changes to take effect!",
+                )
+            corrected_diff = diff - self.default_diffs[aircraft]
+            store_to_file(device, path, corrected_diff)
+
+    def import_swpf(self, device: Device, path):
+        with open(path, "r") as f:
+            loaddict = json.load(f)
+        if isinstance(device, Switchology.SwitchologyDevice):
+            if loaddict.get("build_id", "") != device.build_id:
+                logging.error(f"Selected device's build id \"{device.build_id}\" does not match the profile's build id \"{loaddict.get('build_id', '')}\"")
+                return
+        # self.profile_name_variable.set(loaddict.get("profile_name", "unnamed profile"))
+        dcsdiffs = loaddict.get("DCSdiffs", {})
+        if dcsdiffs is {}:
+            logging.error(f"The file does not contain a DCS profile!")
+            return
+        self.get_diffs_for_device(device).clear()
+        for aircraft, diff_dict in dcsdiffs.items():
+            self.get_diffs_for_device(device)[aircraft] = Diff()
+            self.get_diffs_for_device(device)[aircraft].from_dict(diff_dict)
+        logging.info(f"Switchology profile loaded from \"{path}\"")
+
+    def export_swpf(self, device: Device, path, profile_name=""):
+        storedict = device.get_settings_dict()
+        storedict["profile_name"] = profile_name
+        storedict["DCSdiffs"] = dict()
+        for aircraft, diff in self.get_diffs_for_device(device).items():
+            storedict["DCSdiffs"][aircraft] = diff.to_dict()
+        with open(path, "w") as f:
+            json.dump(storedict, f, indent=4)
+        logging.info(f"Switchology profile stored to \"{path}\"")
+
+    def clear_diffs_for_device(self, device:Device):
+        self.get_diffs_for_device(device).clear()
+
 
 class BindingsFrame(customtkinter.CTkFrame):
     selected_device: Device | None
@@ -675,9 +788,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.selected_category = None
         self.command_filter_str = ""
         self.controls = dict()
-        self.diffs: dict[str, Diff] = dict()
         self.open_popup_with_control = False
-        self.dcs_unimported = True
         self.dpm = DCSProfileManager()
         self.profile_name_variable = customtkinter.StringVar(value="unnamed profile")
         self.controls_frame = None
@@ -733,8 +844,8 @@ class BindingsFrame(customtkinter.CTkFrame):
             master=top_button_row,
             text="Load...",
             values={
-                "...from *.swpf-file": self.import_swpf,
-                "...from DCS": self.import_dcs,
+                "...from *.swpf-file": self.load_from_swpf,
+                "...from DCS": self.load_from_dcs,
             },
             image = icon("import"),
         )
@@ -766,7 +877,7 @@ class BindingsFrame(customtkinter.CTkFrame):
             master=bottom_button_row,
             text="Share...",
             values={
-                "...to *.swpf-file": self.export_swpf
+                "...to *.swpf-file": self.share_to_swpf
             },
             fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"],
             image=icon("share"),
@@ -775,7 +886,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         save_to_savegames_button = customtkinter.CTkButton(
             master=bottom_button_row,
             text="Push to DCS",
-            command=self.export_dcs,
+            command=self.push_to_dcs,
             image=icon("rocket")
         )
         save_to_savegames_button.grid(row=0, column=1, padx=pad, pady=pad, sticky="e")
@@ -788,10 +899,9 @@ class BindingsFrame(customtkinter.CTkFrame):
     def refresh(self):
         if not self.activated:
             return
-        if self.dcs_unimported:
-            self.import_dcs()
+        if not self.dpm.dcs_imported:
+            self.dpm.import_dcs()
         self.populate_controls_list()
-
 
     def show_keybind_popup(self, control):
 
@@ -805,9 +915,9 @@ class BindingsFrame(customtkinter.CTkFrame):
             self.popup = None
 
         def bind(command, key):
-            if aircraft_selection.get() not in self.diffs.keys():
-                self.diffs[aircraft_selection.get()] = Diff()
-            self.diffs[aircraft_selection.get()].add_diff(command, DiffEntry(key))
+            if aircraft_selection.get() not in self.dpm.get_diffs_for_device(self.selected_device).keys():
+                self.dpm.get_diffs_for_device(self.selected_device)[aircraft_selection.get()] = Diff()
+            self.dpm.get_diffs_for_device(self.selected_device)[aircraft_selection.get()].add_diff(command, DiffEntry(key))
             self.populate_controls_list()
             close()
 
@@ -937,9 +1047,9 @@ class BindingsFrame(customtkinter.CTkFrame):
                 self.dpm.set_dcs_path(new_dcs_path)
                 self.dpm.set_dcs_savegames_path(new_dcs_savegames_path)
                 if old_dcs_path != new_dcs_path or old_dcs_savegames_path != new_dcs_savegames_path or len(self.dpm.profiles) == 0:
-                    self.load_profiles()
+                    self.dpm.load_profiles(appdata_path)
             self.create_widgets()
-            self.import_dcs()
+            self.dpm.import_dcs()
             self.populate_controls_list()
 
         def back_on_top():
@@ -1010,175 +1120,6 @@ class BindingsFrame(customtkinter.CTkFrame):
 
             back_on_top()
 
-    def import_dcs(self):
-
-        def assign_diff(a_dir, diff):
-            a_name = self.dpm.get_aircraft_for_directory(a_dir)
-            self.diffs[a_name] = diff
-
-        def load_from_file(a_dir, a_path):
-            logging.debug(f"looking for input profile in {a_path}")
-
-            # 1. get all profiles in this directory with their devices serial numbers, if available
-            by_serial: dict[str | None, list] = dict()
-            for filename in os.listdir(a_path):
-                try:
-                    guid = filename.split("{")[1].split("}")[0]
-                except IndexError:
-                    continue
-                diff = Diff()
-                diff.load_from_file(os.path.join(a_path, filename))
-                diff_device_serial_number: str | None = diff.embedded_dict.get("device_serial_number", None)
-                if diff_device_serial_number not in by_serial.keys():
-                    by_serial[diff_device_serial_number] = list()
-                by_serial[diff_device_serial_number].append({"filename": filename, "guid": guid, "diff": diff})
-
-            # 2a. check for selected device, if the serial number matches the current GUID
-            if self.selected_device.serial_number in by_serial.keys():
-                guid = by_serial[self.selected_device.serial_number][0]["guid"].lower()
-                if guid != self.selected_device.instance_guid.lower():
-                    # 3. if serial numbers don't match, try to repair
-                    if messagebox.askyesnocancel(
-                        title="Warning",
-                        message=f"Device GUID \"{guid}\" and Serial Number \"{self.selected_device.serial_number}\" "
-                                f"don't match for profile \"{a_dir}\". Repair it?",
-                        parent=self
-                    ):
-                        for device in get_devices():
-                            if device.serial_number in by_serial.keys():
-                                filename = str(self.selected_device)
-                                logging.info(f"storing diff for S/N: \"{device.serial_number}\" as \"{filename}\"")
-                                by_serial[device.serial_number][0]["diff"].store_to_file(os.path.join(a_path, filename))
-
-                assign_diff(a_dir, by_serial[self.selected_device.serial_number][0]["diff"])
-                return
-            # 2b. if there is no profile with the selected device's serial number, try to use the one with the GUID
-            else:
-                for values in by_serial.values():
-                    for value in values:
-                        if value["guid"].lower() == self.selected_device.instance_guid.lower():
-                            assign_diff(a_dir, value["diff"])
-                            return
-
-            logging.debug(f"no input profile found for \"{self.selected_device}\" and \"{a_dir}\"")
-
-        if self.selected_device is None:
-            return
-        if any(diff.unsaved_changes for diff in self.diffs.values()):
-            ans = messagebox.askokcancel(
-                "Warning",
-                "Your profile has unsaved changes! If you continue, those will be lost!",
-                parent=self
-            )
-            if not ans:
-                return
-        if self.dpm.dcs_savegames_path is None or self.dpm.dcs_path is None:
-            self.show_settings_popup()
-            return
-        config_input_path = os.path.join(
-            self.dpm.dcs_savegames_path,
-            "Config",
-            "Input",
-        )
-        for aircraft_directory in os.listdir(config_input_path):
-            path = os.path.join(
-                config_input_path,
-                aircraft_directory,
-                "Joystick",
-            )
-            if not os.path.isdir(path):
-                continue
-            try:
-                load_from_file(aircraft_directory, path)
-            except AttributeError:
-                continue
-        self.populate_controls_list()
-        self.profile_name_variable.set("unnamed profile")
-        self.dcs_unimported = False
-
-    def export_dcs(self):
-
-        def store_to_file(p, d):
-            d.embedded_dict = {"device_serial_number": self.selected_device.serial_number}
-            if not os.path.exists(p):
-                os.makedirs(p)
-            for filename in os.listdir(p):
-                if self.selected_device.instance_guid.lower() in filename.lower():
-                    d.store_to_file(os.path.join(p, filename))
-                    return
-            # if there is no valid file there, create one
-            filename = str(self.selected_device)
-            d.store_to_file(os.path.join(p, filename), {"device_serial_number": self.selected_device.serial_number})
-
-        for aircraft, diff in self.diffs.items():
-            path = os.path.join(
-                self.dpm.dcs_savegames_path,
-                "Config",
-                "Input",
-                self.dpm.profiles[aircraft]["aircraftname"],
-                "Joystick"
-            )
-            if self.dpm.check_if_dcs_is_running():
-                messagebox.showwarning(
-                    title="DCS appears to be running!",
-                    message=f"You must restart DCS for changes to take effect!",
-                )
-            corrected_diff = diff - self.dpm.default_diffs[aircraft]
-            store_to_file(path, corrected_diff)
-
-    def import_swpf(self):
-        path = filedialog.askopenfilename(
-            title='Select path',
-            filetypes=[("Switchology profile", ".swpf")],
-        )
-        if not os.path.isfile(path):
-            return
-        with open(path, "r") as f:
-            loaddict = json.load(f)
-        if isinstance(self.selected_device, Switchology.SwitchologyDevice):
-            if loaddict.get("build_id", "") != self.selected_device.build_id:
-                logging.error(f"Selected device's build id \"{self.selected_device.build_id}\" does not match the profile's build id \"{loaddict.get('build_id', '')}\"")
-                return
-        self.profile_name_variable.set(loaddict.get("profile_name", "unnamed profile"))
-        dcsdiffs = loaddict.get("DCSdiffs", {})
-        if dcsdiffs is {}:
-            logging.error(f"The file does not contain a DCS profile!")
-            return
-        if any(diff.unsaved_changes for diff in self.diffs.values()):
-            ans = messagebox.askokcancel(
-                "Warning",
-                "Your profile has unsaved changes! If you continue, those will be lost!",
-                parent=self
-            )
-            if not ans:
-                return
-        self.diffs.clear()
-        for aircraft, diff_dict in dcsdiffs.items():
-            self.diffs[aircraft] = Diff()
-            self.diffs[aircraft].from_dict(diff_dict)
-        self.populate_controls_list()
-        logging.info(f"Switchology profile loaded from \"{path}\"")
-
-    def export_swpf(self):
-        path = filedialog.asksaveasfilename(
-            title='Select path',
-            filetypes=[("Switchology profile", ".swpf")],
-        )
-        if not path.endswith(".swpf"):
-            path += ".swpf"
-        storedict = self.selected_device.get_settings_dict()
-        storedict["profile_name"] = self.profile_name_variable.get()
-        storedict["DCSdiffs"] = dict()
-        for aircraft, diff in self.diffs.items():
-            storedict["DCSdiffs"][aircraft] = diff.to_dict()
-        with open(path, "w") as f:
-            json.dump(storedict, f, indent=4)
-        logging.info(f"Switchology profile stored to \"{path}\"")
-
-    def load_profiles(self):
-        self.dpm.scan_for_profiles()
-        self.last_aircraft_choice = None  # sorted(list(self.dpm.get_aircrafts()))[0]
-
     def populate_controls_list(self):
         def destroy_children(widget):
             for child in widget.winfo_children():
@@ -1192,18 +1133,19 @@ class BindingsFrame(customtkinter.CTkFrame):
         destroy_children(self.controls_frame)
         if self.selected_device is None:
             return
+        device_diffs = self.dpm.get_diffs_for_device(self.selected_device)
         for i, control in enumerate(self.selected_device.controls):
             self.controls[control] = None
             command_name_list = list()
-            for aircraft in self.diffs.keys():
+            for aircraft_name in device_diffs.keys():
                 if issubclass(type(control), AbsoluteAxis):
-                    diff_dict = self.diffs[aircraft].axis_diffs
+                    diff_dict = device_diffs[aircraft_name].axis_diffs
                 else:
-                    diff_dict = self.diffs[aircraft].key_diffs
+                    diff_dict = device_diffs[aircraft_name].key_diffs
                 for command, entry in diff_dict.items():
                     if control.raw_name in entry.active_controls:
                         self.controls[control] = command
-                        command_name_list.append((aircraft, command))
+                        command_name_list.append((aircraft_name, command))
                         # break
 
             controls_line_frame = customtkinter.CTkFrame(master=self.controls_frame)
@@ -1228,7 +1170,7 @@ class BindingsFrame(customtkinter.CTkFrame):
                     text=f"{aircraft.strip()}: {command.name.strip()}",
                     command=lambda a=aircraft, c=command, k=control: self.remove_binding(a, c, k),
                 )
-                binding.bind('<Enter>', binding.configure,)
+                binding.bind('<Enter>', binding.configure, )
                 binding.grid(row=j, column=1, sticky="w")
 
     def remove_binding(self, aircraft, command, control):
@@ -1238,21 +1180,53 @@ class BindingsFrame(customtkinter.CTkFrame):
         )
         if not ans:
             return
-        self.diffs[aircraft].remove_diff(command, DiffEntry(control.raw_name))
+        self.dpm.get_diffs_for_device(self.selected_device)[aircraft].remove_diff(command, DiffEntry(control.raw_name))
         self.populate_controls_list()
 
     def clear_diffs(self):
         self.profile_name_variable.set("unnamed profile")
-        self.diffs.clear()
+        self.dpm.clear_diffs_for_device(self.selected_device)
         self.populate_controls_list()
+
+    def push_to_dcs(self):
+        self.dpm.export_dcs(self.selected_device)
+
+    def load_from_dcs(self):
+        self.dpm.import_dcs()
+        self.populate_controls_list()
+
+    def load_from_swpf(self):
+        if any(diff.unsaved_changes for diff in self.dpm.get_diffs_for_device(self.selected_device).values()):
+            ans = messagebox.askokcancel(
+                "Warning",
+                "Your profile has unsaved changes! If you continue, those will be lost!",
+                parent=self
+            )
+            if not ans:
+                return
+        path = filedialog.askopenfilename(
+            title='Select path',
+            filetypes=[("Switchology profile", ".swpf")],
+        )
+        if not os.path.isfile(path):
+            return
+        self.dpm.import_swpf(self.selected_device, path)
+        self.populate_controls_list()
+
+    def share_to_swpf(self):
+        path = filedialog.asksaveasfilename(
+            title='Select path',
+            filetypes=[("Switchology profile", ".swpf")],
+        )
+        if not path.endswith(".swpf"):
+            path += ".swpf"
+        self.dpm.export_swpf(self.selected_device, path)
 
     def open_popup_on_control(self, value, control):
         if not self.open_popup_with_control:
             return
         if isinstance(control, Button):
             self.show_keybind_popup(control)
-
-
 
 
 class BindingButton(customtkinter.CTkFrame):
