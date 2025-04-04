@@ -383,15 +383,35 @@ class Diff:
         logging.info(f"input profile stored to \"{filepath}\"")
 
     def load_from_file(self, filepath):
+        logging.debug(f"trying to load input profile from \"{filepath}\"")
+        try:
+            self.guid = os.path.basename(filepath).split("{")[1].split("}")[0]
+        except IndexError:
+            pass
         filecontent = ""
-        with open(filepath, "r") as f:
-            for line in f.readlines():
-                if "--- @@@SWED@@@" in line:
-                    self.embedded_dict = json.loads(line.replace("--- @@@SWED@@@", ""))
-                else:
-                    filecontent += line
-        self.from_lua_table(filecontent.replace("local diff = ", "").replace("\nreturn diff", ""))
-        self.unsaved_changes = False
+        try:
+            with open(filepath, "r") as f:
+                for line in f.readlines():
+                    if "--- @@@SWED@@@" in line:
+                        self.embedded_dict = json.loads(line.replace("--- @@@SWED@@@", ""))
+                        self.serial = self.embedded_dict.get("device_serial_number", None)
+                    else:
+                        filecontent += line
+            modified_filecontent = filecontent
+            for old, new in [
+                ("local diff = ", ""),  # clear code before the table
+                ("\nreturn diff", ""),  # clear code after the table
+                ("\\", r"\\")  # replace single \ with escaped \\
+            ]:
+                modified_filecontent = modified_filecontent.replace(old, new)
+            self.from_lua_table(modified_filecontent)
+            self.unsaved_changes = False
+        except Exception as e:
+            logging.error(e)
+            error_filepath = filepath + ".error"
+            with open(error_filepath, "w") as f:
+                f.write(filecontent)
+            logging.error(f"problematic filecontent stored at {error_filepath}")
         logging.info(f"input profile loaded from \"{filepath}\"")
 
     def to_dict(self):
