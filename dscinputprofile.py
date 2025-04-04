@@ -334,6 +334,8 @@ class Diff:
         self.key_diffs = dict()
         self.unsaved_changes = False
         self.embedded_dict = dict()
+        self.guid = None
+        self.serial = None
 
     def clear(self, reset_unsaved_changes=False):
         if reset_unsaved_changes:
