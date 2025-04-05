@@ -135,6 +135,8 @@ class GUI(customtkinter.CTk):
                 )
                 os.execl(sys.executable, os.path.abspath(__file__), *sys.argv)
 
+        self.device_list_frame.select_initial_device()
+
 
 
 class DeviceListFrame(customtkinter.CTkFrame):
@@ -150,8 +152,6 @@ class DeviceListFrame(customtkinter.CTkFrame):
         self.refresh()
         self.selected_device_index = None
         self._command = command
-
-        self.after(200, self.select_initial_device)
 
     def select_initial_device(self):
         for i, device in enumerate(self.devices):
