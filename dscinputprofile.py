@@ -336,6 +336,8 @@ class Diff:
         self.embedded_dict = dict()
         self.guid = None
         self.serial = None
+        self.origin_path = None
+        self.build_id = None
 
     def clear(self, reset_unsaved_changes=False):
         if reset_unsaved_changes:
@@ -397,6 +399,7 @@ class Diff:
                     if "--- @@@SWED@@@" in line:
                         self.embedded_dict = json.loads(line.replace("--- @@@SWED@@@", ""))
                         self.serial = self.embedded_dict.get("device_serial_number", None)
+                        self.build_id = self.embedded_dict.get("build_id", None)
                     else:
                         filecontent += line
             modified_filecontent = filecontent
@@ -414,6 +417,7 @@ class Diff:
             with open(error_filepath, "w") as f:
                 f.write(filecontent)
             logging.error(f"problematic filecontent stored at {error_filepath}")
+        self.origin_path = filepath
         logging.info(f"input profile loaded from \"{filepath}\"")
 
     def to_dict(self):
@@ -474,7 +478,7 @@ class DCSProfileManager:
         self._profiles = None
         self._default_diffs = None
         self.diffs_by_guid: dict[str, dict[str, Diff]] = dict()
-        self.diffs_by_serial: dict[str, dict[str, Diff]] = dict()
+        self.diffs_by_serial: dict[str, dict[str, list[Diff]]] = dict()
         self.dcs_imported = False
 
     def get_diffs_for_device(self, device:Device):
@@ -482,7 +486,11 @@ class DCSProfileManager:
         #     if device.serial_number.lower() in self.diffs_by_serial.keys():
         #         return self.diffs_by_serial[device.serial_number.lower()]
         if device.instance_guid.lower() in self.diffs_by_guid.keys():
-            return self.diffs_by_guid[device.instance_guid.lower()]
+            diffs_by_guid = self.diffs_by_guid[device.instance_guid.lower()]
+            for aircraft, diffs in diffs_by_guid.items():
+                if diffs.serial is not None and diffs.serial.lower() != device.serial_number.lower():
+                    logging.warning(f"diffs for {aircraft} have non-matching device-serial ({diffs.serial}) and -GUID ({diffs.guid})")
+            return diffs_by_guid
 
     @property
     def profiles(self):
@@ -672,6 +680,39 @@ class DCSProfileManager:
             if item["aircraftname"] == aircraftname:
                 return key
 
+    def find_broken_bindings(self):
+
+        def check_serial_vs_guid(serial, guid):
+            for device in get_devices():
+                if device.serial_number.lower() == serial.lower():
+                    if device.instance_guid == guid:
+                        return True
+                    else:
+                        return False
+            # serial was not in current device list
+            return None
+
+        def find_broken_bindings_for_serial_and_aircraft(ser, air):
+            bbs = list()
+            for diffs in self.diffs_by_serial[ser][air]:
+                if check_serial_vs_guid(serial, diffs.guid):
+                    logging.info(f"found matching bindings file for {serial} and {diffs.guid}!")
+                    return  # there is a good bindings file,
+                else:
+                    bbs.append(diffs)
+            if ser not in broken_bindings.keys():
+                broken_bindings[ser] = dict()
+            if air not in broken_bindings[ser].keys():
+                broken_bindings[ser][air] = list()
+            broken_bindings[ser][air] = bbs
+
+        broken_bindings = dict()
+        # GUID files that have a serial embedded, but the guid and serial don't match are suspicious
+        for serial in self.diffs_by_serial.keys():
+            for aircraft in self.diffs_by_serial[serial].keys():
+                find_broken_bindings_for_serial_and_aircraft(serial, aircraft)
+        return broken_bindings
+
     def import_dcs(self):
         if self.dcs_savegames_path is None or self.dcs_path is None:
             raise Exception  # todo: define exception for paths not set
@@ -710,13 +751,17 @@ class DCSProfileManager:
                     serial = diff.serial.lower()
                     if serial not in self.diffs_by_serial.keys():
                         self.diffs_by_serial[serial] = dict()
-                    self.diffs_by_serial[serial][aircraft_name] = diff
+                    if aircraft_name not in self.diffs_by_serial[serial].keys():
+                        self.diffs_by_serial[serial][aircraft_name] = list()
+                    self.diffs_by_serial[serial][aircraft_name].append(diff)
         self.dcs_imported = True
 
     def export_dcs(self, device):
 
         def store_to_file(dev:Device, p, d):
             d.embedded_dict = {"device_serial_number": dev.serial_number}
+            if hasattr(dev, "build_id"):
+                d.embedded_dict["build_id"] = dev.build_id
             if not os.path.exists(p):
                 os.makedirs(p)
             for filename in os.listdir(p):
@@ -901,6 +946,9 @@ class BindingsFrame(customtkinter.CTkFrame):
             return
         if not self.dpm.dcs_imported:
             self.dpm.import_dcs()
+            bbs = self.dpm.find_broken_bindings()
+            if bbs:
+                self.show_broken_bindings_popup(bbs)
         self.populate_controls_list()
 
     def show_keybind_popup(self, control):
@@ -1227,6 +1275,105 @@ class BindingsFrame(customtkinter.CTkFrame):
             return
         if isinstance(control, Button):
             self.show_keybind_popup(control)
+
+    def show_broken_bindings_popup(self, broken_bindings):
+
+        def automatch():
+            messagebox.showwarning(title="not implemented!", message="not implemented!")
+
+        def repair():
+            for device in selects.keys():
+                for aircraft, select in selects[device].items():
+                    for diffs in broken_bindings[device.serial_number.lower()][aircraft]:
+                        if os.path.basename(diffs.origin_path) in select.get():
+                            new_path = os.path.join(os.path.dirname(diffs.origin_path), str(device))
+                            if hasattr(device, "build_id"):
+                                diffs.embedded_dict["build_id"] = device.build_id
+                            diffs.store_to_file(new_path)
+            self.popup.destroy()
+            self.popup = None
+            self.refresh()
+
+        if self.popup is None or not self.popup.winfo_exists():
+            self.popup = customtkinter.CTkToplevel(self)
+        self.popup.geometry(f"+{self.winfo_rootx() - 50}+{self.winfo_rooty() + 200}")
+        self.popup.title(f"Fix Broken Device Bindings")
+        self.popup.after(100, self.popup.lift)
+        self.popup.focus()
+        self.popup.columnconfigure((0, 1), weight=1)
+
+        description = customtkinter.CTkTextbox(
+            master=self.popup,
+            height=60,
+            wrap="word",
+        )
+        description.insert("0.0", "Some of your DCS input binding files refer to devices that are no longer detected. "
+                 "This can happen if GUIDs change. Select the correct device to repair each binding.")
+        description.configure(state="disabled")
+        description.grid(row=0, column=0, sticky="ew", columnspan=2)
+        scrollframe = customtkinter.CTkScrollableFrame(
+            master=self.popup,
+            width=600,
+        )
+        scrollframe.grid(row=1, column=0, sticky="nsew", columnspan=2)
+        selects = dict()
+        for i, device_serial in enumerate(broken_bindings.keys()):
+            device = None
+            for d in get_devices():
+                if d.serial_number.lower() == device_serial.lower():
+                    device = d
+                    break
+            if device is None:
+                continue
+            device_frame = customtkinter.CTkFrame(
+                master=scrollframe
+            )
+            device_frame.grid(row=i+1, column=0, sticky="ew", padx=pad, pady=pad)
+            device_frame.columnconfigure( 1, weight=1)
+            device_description = f"{device.product_name}\nSerial: {device_serial}\nCurrent GUID: {device.instance_guid}"
+            if issubclass(type(device), Switchology.SwitchologyDevice):
+                device_description += f"\nBuild-ID: {device.build_id}"
+            device_label = customtkinter.CTkLabel(
+                master=device_frame,
+                text=device_description,
+                anchor="w",
+                justify="left",
+            )
+            device_label.grid(row=0, column=0, columnspan=2, sticky="w")
+            selects[device] = dict()
+            for j, aircraft in enumerate(broken_bindings[device_serial].keys()):
+                aircraft_label = customtkinter.CTkLabel(
+                    master=device_frame,
+                    text=aircraft,
+                    anchor="w",
+                    width=80,
+                )
+                aircraft_label.grid(row=j+1, column=0, sticky="w")
+                values = list()
+                for diffs in broken_bindings[device_serial][aircraft]:
+                    diff_description = os.path.basename(diffs.origin_path)
+                    if diffs.build_id is not None:
+                        diff_description += "\n Build-ID: " + diffs.build_id
+                    values.append(diff_description)
+                selects[device][aircraft] = customtkinter.CTkOptionMenu(
+                    master=device_frame,
+                    values=values,
+                    anchor="w",
+                )
+                selects[device][aircraft].grid(row=j+1, column=1, sticky="ew")
+        auto_button = customtkinter.CTkButton(
+            master=self.popup,
+            text="Match automatically",
+            fg_color=customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"],
+            command=automatch,
+        )
+        auto_button.grid(row=2, column=0)
+        repair_button = customtkinter.CTkButton(
+            master=self.popup,
+            text="Repair",
+            command=repair,
+        )
+        repair_button.grid(row=2, column=1)
 
 
 class BindingButton(customtkinter.CTkFrame):
