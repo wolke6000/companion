@@ -21,6 +21,7 @@ from copy import deepcopy
 from more_itertools import batched
 from itertools import product
 
+_latest_firmware_info = None
 
 class NotSwitchologyDeviceError(TypeError):
     pass
@@ -483,24 +484,26 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
 
     def update_from_server(self):
         update_server_url = "https://us-central1-switchology-a3b47.cloudfunctions.net/download_latest_firmware"
-        logging.info("reqeuesting firmware information from server...")
-        response = requests.get(update_server_url)
-        response_json = response.json()
-        if self.device.fwver == response_json.get('tag'):
+        global _latest_firmware_info
+        if _latest_firmware_info is None:
+            logging.info("reqeuesting firmware information from server...")
+            response = requests.get(update_server_url)
+            _latest_firmware_info = response.json()
+        if self.device.fwver == _latest_firmware_info.get('tag'):
             logging.info("firmware is up to date")
             return
         ans = messagebox.askquestion(
                 title="Firmware update available!",
                 message=f"There is a new version available! Do you want to update?\n"
-                        f"current version: \"{self.device.fwver}\", new version: \"{response_json.get('tag')}\"\n"
-                        f"published at: {response_json.get('published_at')}\n"
+                        f"current version: \"{self.device.fwver}\", new version: \"{_latest_firmware_info.get('tag')}\"\n"
+                        f"published at: {_latest_firmware_info.get('published_at')}\n"
         )
         if ans == 'yes':
             with TemporaryDirectory() as tempdir:
                 logging.debug(f"temporary directory created: \"{tempdir}\"")
-                file_response = requests.get(response_json.get("url"))
+                file_response = requests.get(_latest_firmware_info.get("url"))
                 hash_calculator = hashlib.sha256()
-                firmware_file_path = os.path.join(tempdir, f"{response_json.get('tag')}.bin")
+                firmware_file_path = os.path.join(tempdir, f"{_latest_firmware_info.get('tag')}.bin")
                 with open(firmware_file_path, "w+b") as firmware_file:
                     for chunk in file_response.iter_content(chunk_size=8192):
                         firmware_file.write(chunk)
@@ -509,7 +512,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                     # firmware_file.seek(0)
                 firmware_hash = hash_calculator.hexdigest()
 
-                if firmware_hash != response_json.get('hash'):
+                if firmware_hash != _latest_firmware_info.get('hash'):
                     logging.error(f"firmware download was not successfull!")
                     return
 
