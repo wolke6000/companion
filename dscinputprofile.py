@@ -4,7 +4,7 @@ import typing
 
 import psutil
 from pyglet.input import AbsoluteAxis, Button, Control
-from slpp import SLPP
+from slpp import slpp
 import lupa.lua51 as lupa
 from lupa.lua51 import LuaRuntime
 import os
@@ -21,15 +21,8 @@ from icon import icon
 
 pad = 3
 
-lua = LuaRuntime()
-
-dofile = lua.eval("dofile")
-loadfile = lua.eval("loadfile")
-require = lua.eval("require")
-
-dofile('iCommands.lua')
-my_utils = loadfile('my_utils.lua')
-
+def dcsify_device_name(device: Device):
+    return device.instance_name + " {" + device.instance_guid[:12].upper() + device.instance_guid[12:].lower() + "}"
 
 def find_dcs_savegames_path():
     for dcs_dir in ["DCS", "DCS.openbeta"]:
@@ -41,6 +34,7 @@ def find_dcs_savegames_path():
 
 
 def find_dcs_install_path():
+    return r"Z:\DCS World OpenBeta"
     hkey = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall")
     index = 0
     installdir = None
@@ -118,707 +112,163 @@ def lua_to_py(luatable):
         return dso
 
 
-def load_device_profile_from_file(filename, device_name, folder, keep_g_untouched, dcspath):
-    cwd = os.getcwd()
-
-    os.chdir(dcspath)
-
-    my_utils()
-
-    # load loadDeviceProfileFromFile() from Scripts/Input/Data.lua
-    data_lua_content = ""
-    with open(os.path.join(dcspath, "Scripts", "Input", "Data.lua"), "r", encoding="utf-8") as f:
-        skip = True
-        for line in f.readlines():
-            if line.startswith("local function loadDeviceProfileFromFile"):
-                skip = False
-                line = line.replace("local function loadDeviceProfileFromFile", "loadDeviceProfileFromFile = function")
-            if not skip:
-                data_lua_content += line
-                if line.startswith("end"):
-                    skip = True
-            if line.startswith("local fdef, errfdef = loadfile('./Scripts/Input/DefaultAssignments.lua')"):
-                data_lua_content += line
-                skip = False
-
-    lua.execute(data_lua_content)
-    fun = lua.eval("loadDeviceProfileFromFile")
-    result, err = fun(filename, device_name, folder, keep_g_untouched)
-
-    os.chdir(cwd)
-
-    res = lua_to_py(result)
-
-    return res
-
-
-def parse_entry(filename):
-    lua = LuaRuntime()
-    with open(filename, "r", encoding='UTF-8') as f:
-        file_lines = f.readlines()
-    current_mod_path = os.path.dirname(filename).replace('\\', '/')
-
-    # cut of the parts after the declare_plugin()-call
-    in_declare_plugin = False
-    bracket_depth = 0
-    filecontents = ""
-    for line in file_lines:
-        filecontents += line
-        if "declare_plugin" in line:
-            in_declare_plugin = True
-        if in_declare_plugin:
-            bracket_depth += line.count("(") - line.count(")")
-            if bracket_depth == 0:
-                break
-
-    script = (
-        "function()\n"
-        "local __DCS_VERSION__ = \"\""
-        f"local current_mod_path = \"{current_mod_path}\"\n"
-        "_ = function(s) return s end\n"
-        "function declare_plugin(id, argtable) return argtable end\n"
-        + "".join(filecontents).replace("declare_plugin", "return declare_plugin") +
-        "end"
-    )
-    fun = lua.eval(script)
-    result = fun()
-    lua_table = lua_to_py(result)
-    return lua_table.get('InputProfiles', None)
-
-
-class Command:
-    def __init__(self, **kwargs):
-        self.name = kwargs.get('name', None)
-        self.category = kwargs.get('category', None)
-        self.cockpit_device_id = kwargs.get('cockpit_device_id', 'nil')
-
-    def __repr__(self):
-        return f"{self.category}:{self.name}"
-
-    def commandhash(self):
-        raise NotImplementedError
-
-    def __hash__(self):
-        return hash(self.commandhash())
-
-    def __eq__(self, other):
-        return self.__hash__() == other.__hash__()
-
-    def type(self):
-        return self.__class__.__name__
-
-
-class KeyCommand(Command):
-    def __init__(self, **kwargs):
-        if all(x in kwargs.keys() for x in ["hash", "name"]):
-            kwargs["down"] = kwargs["hash"].split('d', maxsplit=1)[-1].split("p")[0]
-            kwargs["pressed"] = kwargs["hash"].split('p', maxsplit=1)[-1].split("u")[0]
-            kwargs["up"] = kwargs["hash"].split('u', maxsplit=1)[-1].split("cd")[0]
-            kwargs["cockpit_device_id"] = kwargs["hash"].split('cd', maxsplit=1)[-1].split("vd")[0]
-            kwargs["value_down"] = kwargs["hash"].split('vd', maxsplit=1)[-1].split("vp")[0]
-            kwargs["value_pressed"] = kwargs["hash"].split('vp', maxsplit=1)[-1].split("vu")[0]
-            kwargs["value_up"] = kwargs["hash"].split('vu', maxsplit=1)[-1]
-
-        super().__init__(**kwargs)
-        self.down = kwargs.get('down', 'nil')
-        self.value_down = kwargs.get('value_down', 'nil')
-        self.up = kwargs.get('up', 'nil')
-        self.value_up = kwargs.get('value_up', 'nil')
-        self.pressed = kwargs.get('pressed', 'nil')
-        self.value_pressed = kwargs.get('value_pressed', 'nil')
-
-    def commandhash(self):
-        return (f"d{self.down}p{self.pressed}u{self.up}"
-                f"cd{self.cockpit_device_id}"
-                f"vd{self.value_down}vp{self.value_pressed}vu{self.value_up}")
-
-
-class AxisCommand(Command):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        if "hash" in kwargs.keys():
-            self.action = kwargs["hash"].split('a', maxsplit=1)[-1].split("cd")[0]
-            self.cockpit_device_id = kwargs["hash"].split('cd', maxsplit=1)[-1]
-        elif "action" in kwargs.keys():
-            self.action = kwargs["action"]
-
-    def commandhash(self):
-        return f"a{self.action}cd{self.cockpit_device_id}"
-
-
-class DiffEntry:
-    _controls_added: set[str]
-    _controls_removed: set[str]
-
-    def __init__(self, add: str | typing.Iterable[str] | None = None, remove: str | typing.Iterable[str] | None = None):
-        self._controls_added = set()
-        if isinstance(add, str):
-            self._controls_added.add(add)
-        elif issubclass(type(add), typing.Iterable):
-            for a in add:
-                self._controls_added.add(a)
-        self._controls_removed = set()
-        if isinstance(remove, str):
-            self._controls_removed.add(remove)
-        elif issubclass(type(remove), typing.Iterable):
-            for r in remove:
-                self._controls_removed.add(r)
-
-
-    def __repr__(self):
-        repr_str = ""
-        if len(self._controls_added) > 0:
-            repr_str += ", +:[" + ", ".join([c for c in self._controls_added]) + "]"
-        if len(self._controls_removed) > 0:
-            repr_str += ", -:[" + ", ".join([c for c in self._controls_removed]) + "]"
-        return repr_str
-
-    def add_control(self, control: str):
-        if control in self._controls_added:
-            return
-        elif control in self._controls_removed:
-            self._controls_removed.remove(control)  # cancelled
-        else:
-            self._controls_added.add(control)
-
-    def remove_control(self, control: str):
-        if control in self._controls_removed:
-            return
-        elif control in self._controls_added:
-            self._controls_added.remove(control)  # cancelled
-        else:
-            self._controls_added.add(control)
-
-    @property
-    def controls(self):
-        return self._controls_added | self._controls_removed
-
-    @property
-    def active_controls(self):
-        return self._controls_added - self._controls_removed
-
-    def to_dict(self):
-        retval = dict()
-        if len(self._controls_added) > 0:
-            retval["added"] = dict()
-            for i, added in enumerate(self._controls_added):
-                retval["added"][i+1] = {"key": change_control_names_pyglet_to_dcs(added)}
-        if len(self._controls_removed) > 0:
-            retval["removed"] = dict()
-            for i, removed in enumerate(self._controls_removed):
-                retval["removed"][i+1] = {"key": change_control_names_pyglet_to_dcs(removed)}
-        return retval
-
-
-    def __add__(self, other: "DiffEntry"):
-        return DiffEntry(
-            add=(self._controls_added - other._controls_removed) | (other._controls_added - self._controls_removed),
-            remove=(self._controls_removed - other._controls_added) | (other._controls_removed - self._controls_added)
-        )
-
-    def __sub__(self, other: "DiffEntry"):
-        return self.__add__(other.__neg__())
-
-    def __neg__(self):
-        return DiffEntry(
-            add=self._controls_removed,
-            remove=self._controls_added,
-        )
-
-
-class Diff:
-    axis_diffs: dict[Command, DiffEntry]
-    key_diffs: dict[Command, DiffEntry]
-    def __init__(self):
-        self.axis_diffs = dict()
-        self.key_diffs = dict()
-        self.unsaved_changes = False
-        self.embedded_dict = dict()
-        self.guid = None
-        self.serial = None
-        self.origin_path = None
-        self.build_id = None
-
-    def clear(self, reset_unsaved_changes=False):
-        if reset_unsaved_changes:
-            self.unsaved_changes = False
-        self.axis_diffs.clear()
-        self.key_diffs.clear()
-
-    def add_diff(self, command: Command, entry: DiffEntry):
-        self.unsaved_changes = True
-        if isinstance(command, KeyCommand):
-            diffs = self.key_diffs
-        elif isinstance(command, AxisCommand):
-            diffs = self.axis_diffs
-        else:
-            return
-        if command in diffs.keys():
-            diffs[command] += entry
-        else:
-            diffs[command] = entry
-
-    def remove_diff(self, command: Command, entry: DiffEntry):
-        self.unsaved_changes = True
-        if isinstance(command, KeyCommand):
-            diffs = self.key_diffs
-        elif isinstance(command, AxisCommand):
-            diffs = self.axis_diffs
-        else:
-            return
-        if command in diffs.keys():
-            diffs[command] -= entry
-        else:
-            diffs[command] = -entry
-
-    def to_lua_table(self):
-        return SLPP().encode(self.to_dict())
-
-    def from_lua_table(self, luatable):
-        pytable = SLPP().decode(luatable)
-        self.from_dict(pytable)
-
-    def store_to_file(self, filepath):
-        with open(filepath, "w") as f:
-            if self.embedded_dict:
-                f.write(f"--- @@@SWED@@@{json.dumps(self.embedded_dict)}\n\n")
-            f.write("local diff = " + self.to_lua_table() + "\nreturn diff")
-        self.unsaved_changes = False
-        logging.info(f"input profile stored to \"{filepath}\"")
-
-    def load_from_file(self, filepath):
-        logging.debug(f"trying to load input profile from \"{filepath}\"")
-        try:
-            self.guid = os.path.basename(filepath).split("{")[1].split("}")[0]
-        except IndexError:
-            pass
-        filecontent = ""
-        try:
-            with open(filepath, "r") as f:
-                for line in f.readlines():
-                    if "--- @@@SWED@@@" in line:
-                        self.embedded_dict = json.loads(line.replace("--- @@@SWED@@@", ""))
-                        self.serial = self.embedded_dict.get("device_serial_number", None)
-                        self.build_id = self.embedded_dict.get("build_id", None)
-                    else:
-                        filecontent += line
-            modified_filecontent = filecontent
-            for old, new in [
-                ("local diff = ", ""),  # clear code before the table
-                ("\nreturn diff", ""),  # clear code after the table
-                ("\\", r"\\")  # replace single \ with escaped \\
-            ]:
-                modified_filecontent = modified_filecontent.replace(old, new)
-            self.from_lua_table(modified_filecontent)
-            self.unsaved_changes = False
-        except Exception as e:
-            logging.error(e)
-            error_filepath = filepath + ".error"
-            with open(error_filepath, "w") as f:
-                f.write(filecontent)
-            logging.error(f"problematic filecontent stored at {error_filepath}")
-        self.origin_path = filepath
-        logging.info(f"input profile loaded from \"{filepath}\"")
-
-    def to_dict(self):
-        retval = { "axisDiffs": dict(), "keyDiffs": dict() }
-        for diffs, diffs_key in [(self.axis_diffs, "axisDiffs"), (self.key_diffs, "keyDiffs")]:
-            for command, diffentry in diffs.items():
-                if len(diffentry.controls) > 0:
-                    retval[diffs_key][command.commandhash()] = diffentry.to_dict()
-                    retval[diffs_key][command.commandhash()]["name"] = command.name
-        return retval
-
-    def from_dict(self, origin_dict):
-        for diffs_key, command_type in [("axisDiffs", AxisCommand), ("keyDiffs", KeyCommand)]:
-            if diffs_key in origin_dict.keys():
-                for keydiff in origin_dict[diffs_key].keys():
-                    name = origin_dict[diffs_key][keydiff]["name"]
-                    for operation, operation_key in [(self.add_diff, "added"), (self.remove_diff, "removed")]:
-                        if operation_key in origin_dict[diffs_key][keydiff].keys():
-                            for item in origin_dict[diffs_key][keydiff][operation_key].keys():
-                                key = origin_dict[diffs_key][keydiff][operation_key][item]["key"]
-                                operation(command_type(hash=keydiff, name=name), DiffEntry(change_control_names_dcs_to_pyglet(key)))
-
-    def __add__(self, other: "Diff"):
-        result = Diff()
-        for diffs_name in ["key_diffs", "axis_diffs"]:
-            self_diffs = getattr(self, diffs_name)
-            other_diffs = getattr(other, diffs_name)
-            result_diffs = getattr(result, diffs_name)
-            for command in set(self_diffs.keys()).union(set(other_diffs.keys())):
-                entry = DiffEntry()
-                if command in self_diffs.keys():
-                    entry += self_diffs[command]
-                if command in other_diffs.keys():
-                    entry += other_diffs[command]
-                if len(entry.controls) > 0:
-                    result_diffs[command] = entry
-        return result
-
-    def __neg__(self):
-        result = Diff()
-        for diffs_name in ["key_diffs", "axis_diffs"]:
-            self_diffs = getattr(self, diffs_name)
-            result_diffs = getattr(result, diffs_name)
-            for command, entry in self_diffs.items():
-                result_diffs[command] = -entry
-        return result
-
-    def __sub__(self, other):
-        return self.__add__(other.__neg__())
-
-
 class DCSProfileManager:
 
-    def __init__(self):
-        self.dcs_path = None
-        self.dcs_savegames_path = None
-        self.dcs_config_version = None
-        self._profiles = None
-        self._default_diffs = None
-        self.diffs_by_guid: dict[str, dict[str, Diff]] = dict()
-        self.diffs_by_serial: dict[str, dict[str, list[Diff]]] = dict()
-        self.dcs_imported = False
+    def _run_in_dcspath(func):
+        def wrapper(self, *args, **kwargs):
+            cwd = os.getcwd()
+            os.chdir(self.dcspath)
+            result = func(self, *args, **kwargs)
+            os.chdir(cwd)
+            return result
+        return wrapper
 
-    def get_diffs_for_device(self, device:Device):
-        # if device.serial_number is not None:
-        #     if device.serial_number.lower() in self.diffs_by_serial.keys():
-        #         return self.diffs_by_serial[device.serial_number.lower()]
-        if device.instance_guid.lower() in self.diffs_by_guid.keys():
-            diffs_by_guid = self.diffs_by_guid[device.instance_guid.lower()]
-            for aircraft, diffs in diffs_by_guid.items():
-                if diffs.serial is not None and diffs.serial.lower() != device.serial_number.lower():
-                    logging.warning(f"diffs for {aircraft} have non-matching device-serial ({diffs.serial}) and -GUID ({diffs.guid})")
-            return diffs_by_guid
+    def __init__(self, dcs_savegames_path, dcs_path):
+        self._lua = LuaRuntime()
+        self.dofile = self._lua.eval("dofile")
+        self.loadfile = self._lua.eval("loadfile")
+        self.require = self._lua.eval("require")
+        self.dcspath = dcs_path
+        self.dcs_savegames_path = dcs_savegames_path
 
-    @property
-    def profiles(self):
-        if self._profiles is None:
-            if not self.load_profiles(appdata_path):
-                self._profiles = dict()
-                self._default_diffs = dict()
-                self.scan_for_profiles()
-        return self._profiles
+        my_utils = self.loadfile('my_utils.lua')
 
-    @property
-    def default_diffs(self):
-        if self._default_diffs is None:
-            if not self.load_profiles(appdata_path):
-                self._profiles = dict()
-                self._default_diffs = dict()
-                self.scan_for_profiles()
-        return self._default_diffs
+        my_utils()
 
-    def set_dcs_path(self, path):
-        if not os.path.isdir(path):
-            raise NotADirectoryError
-        self.dcs_path = path
-
-    def set_dcs_savegames_path(self, path):
-        if not os.path.isdir(path):
-            raise NotADirectoryError
-        self.dcs_savegames_path = path
-
-    def check_if_dcs_is_running(self):
-        for p in psutil.process_iter():
-            try:
-                if self.dcs_path in p.exe() and "DCS" in p.name():
-                    return True
-            except psutil.AccessDenied:
-                continue
-        return False
-
-    def get_dcs_version(self):
-        with open(os.path.join(self.dcs_path, "autoupdate.cfg"), 'r') as f:
-            config = json.load(f)
-        version = config.get("version", None)
-        if version is None:
-            logging.warning("Could not get DCS version")
-        logging.info(f"Detected DCS version \"{version}\"")
-        return version
-
-    def store_profiles(self, path):
-        filepath = os.path.join(path, "dcs_config.json")
-        with open(filepath, "w") as f:
-            json.dump(
-                {
-                    "dcs_version": self.get_dcs_version(),
-                    "dcs_install_path": self.dcs_path,
-                    "dcs_savegames_path": self.dcs_savegames_path,
-                    "commands": self.profiles,
-                },
-                f,
-                indent=4
-            )
-
-    def load_profiles(self, path):
-        filepath = os.path.join(path, "dcs_config.json")
-        if not os.path.isfile(filepath):
-            logging.warning(f"could not find dcs config in \"{filepath}\"")
-            return False
-        try:
-            with open(filepath, "r") as f:
-                config = json.load(f)
-        except json.decoder.JSONDecodeError:
-            return False
-        self.dcs_path = config.get("dcs_install_path", None)
-        self.dcs_savegames_path = config.get("dcs_savegames_path", None)
-        self.dcs_config_version = config.get("dcs_version", None)
-        self._profiles = config.get("commands", dict())
-        for aircraftname in self.profiles.keys():
-            self.extract_default_diff_from_profile(aircraftname)
-        logging.info(f"dcs config loaded from  \"{filepath}\"")
-        return True
-
-    def extract_default_diff_from_profile(self, aircraftname: str):
-        diffs = Diff()
-        for command_class, command_class_key in [(KeyCommand, "keyCommands"), (AxisCommand, "axisCommands")]:
-            if command_class_key not in self.profiles[aircraftname]:
-                continue
-            for command in self.profiles[aircraftname][command_class_key]:
-                if not "combos" in command:
-                    continue
-                diff_entry = DiffEntry()
-                for combo in command["combos"]:
-                    diff_entry.add_control(combo["key"])
-                diffs.add_diff(command_class(**command), diff_entry)
-        if self._default_diffs is None:
-            self._default_diffs = dict()
-        self._default_diffs[aircraftname] = diffs
-
-    def scan_for_profiles(self):
-        def scan_mods_aircraft_dir(path):
-            if not os.path.isdir(path):
-                raise NotADirectoryError
-            for p in os.listdir(path):
-                subpath = os.path.join(path, p)
-                if os.path.isdir(subpath):
-                    scan_mods_aircraft_dir(subpath)
-                elif os.path.isfile(subpath):
-                    if os.path.basename(subpath) == 'entry.lua':
-                        foundpath = os.path.dirname(subpath)
-                        try:
-                            inputprofiles = parse_entry(subpath)
-                            for aircraftname in inputprofiles.keys():
-                                foundpath = inputprofiles[aircraftname]
-                                with open(os.path.join(foundpath, 'name.lua'), "r") as f:
-                                    aircraftname_pretty = f.readline().split("'")[1].strip()
-                                logging.debug(f"found aircraft controls for \"{aircraftname_pretty}\" in \"{foundpath}\"")
-                                result = load_device_profile_from_file(
-                                    os.path.join(foundpath, 'joystick', 'default.lua'),
-                                    None,
-                                    os.path.join(foundpath, r'joystick\\'),
-                                    None,
-                                    self.dcs_path
-                                )
-                                if isinstance(result, str):
-                                    logging.error(f"could not load aircraft controls: {result}")
-                                else:
-                                    result["aircraftname"] = aircraftname
-                                    self.profiles[aircraftname_pretty] = result
-                                    self.extract_default_diff_from_profile(aircraftname_pretty)
-                        except Exception as e:
-                            logging.debug(f"Exception when loading from {foundpath}: {e}")
-
-        scan_mods_aircraft_dir(os.path.join(self.dcs_path, 'Mods', 'aircraft'))
-        self.store_profiles(appdata_path)
-
-    def get_aircrafts(self):
-        return self.profiles.keys()
-
-    def get_categories_for_aircraft(self, aircraft):
-        categories = set()
-        if aircraft not in self.profiles.keys():
-            return KeyError
-        for commands_list in ["axisCommands", "keyCommands"]:
-            if commands_list not in self.profiles[aircraft].keys():
-                continue
-            mylist = self.profiles[aircraft][commands_list]
-            for command in mylist:
-                if "category" in command.keys():
-                    category = command["category"]
-                    if isinstance(category, list):
-                        for cat in category:
-                            categories.add(cat)
-                    else:
-                        categories.add(category)
-        return categories
-
-    def get_commands_for_aircraft_and_category(self, aircraft, category):
-        if aircraft not in self.profiles.keys():
-            raise KeyError
-        if category not in self.get_categories_for_aircraft(aircraft):
-            raise KeyError
-        for commands_list, commandclass in [
-            ("axisCommands", AxisCommand),
-            ("keyCommands", KeyCommand),
-        ]:
-            if commands_list not in self.profiles[aircraft].keys():
-                continue
-            mylist = self.profiles[aircraft][commands_list]
-            for command in mylist:
-                if "category" in command.keys():
-                    cat = command["category"]
-                    if isinstance(cat, list):
-                        if category in cat:
-                            yield commandclass(**command)
-                    else:
-                        if cat == category:
-                            yield commandclass(**command)
-
-    def get_all_axis_commands_for_aircraft(self, aircraft):
-        if aircraft not in self.profiles.keys():
-            raise KeyError
-        if "axisCommands" not in self.profiles[aircraft].keys():
-            return
-        for command in self.profiles[aircraft]["axisCommands"]:
-            yield  AxisCommand(**command)
-
-    def get_aircraft_for_directory(self, aircraftname):
-        for key, item in self.profiles.items():
-            if item["aircraftname"] == aircraftname:
-                return key
-
-    def find_broken_bindings(self):
-
-        def check_serial_vs_guid(serial, guid):
-            for device in get_devices():
-                if device.serial_number.lower() == serial.lower():
-                    if device.instance_guid == guid:
-                        return True
-                    else:
-                        return False
-            # serial was not in current device list
-            return None
-
-        def find_broken_bindings_for_serial_and_aircraft(ser, air):
-            bbs = list()
-            for diffs in self.diffs_by_serial[ser][air]:
-                if check_serial_vs_guid(serial, diffs.guid):
-                    logging.info(f"found matching bindings file for {serial} and {diffs.guid}!")
-                    return  # there is a good bindings file,
-                else:
-                    bbs.append(diffs)
-            if ser not in broken_bindings.keys():
-                broken_bindings[ser] = dict()
-            if air not in broken_bindings[ser].keys():
-                broken_bindings[ser][air] = list()
-            broken_bindings[ser][air] = bbs
-
-        broken_bindings = dict()
-        # GUID files that have a serial embedded, but the guid and serial don't match are suspicious
-        for serial in self.diffs_by_serial.keys():
-            for aircraft in self.diffs_by_serial[serial].keys():
-                find_broken_bindings_for_serial_and_aircraft(serial, aircraft)
-        return broken_bindings
-
-    def import_dcs(self):
-        if self.dcs_savegames_path is None or self.dcs_path is None:
-            raise Exception  # todo: define exception for paths not set
-        # if any(any(diff.unsaved_changes for diff in self.diffs[device].values()) for device in self.diffs.keys()):
-        #     ans = messagebox.askokcancel(
-        #         "Warning",
-        #         "Your profile has unsaved changes! If you continue, those will be lost!",
-        #         parent=self
-        #     )
-        #     if not ans:
-        #         return
-        config_input_path = os.path.join(
-            self.dcs_savegames_path,
-            "Config",
-            "Input",
+        self._lua.execute(
+            "local f, err = loadfile('envTable.lua')\n"
+            "envTable = f()"
         )
-        for aircraft_directory in os.listdir(config_input_path):
-            path = os.path.join(
-                config_input_path,
-                aircraft_directory,
-                "Joystick",
-            )
-            aircraft_name = self.get_aircraft_for_directory(aircraft_directory)
-            if not os.path.isdir(path):
-                continue
-            for filename in os.listdir(path):
-                filepath = os.path.join(path, filename)
-                diff = Diff()
-                diff.load_from_file(filepath)
-                if diff.guid is not None:
-                    guid = diff.guid.lower()
-                    if guid not in self.diffs_by_guid.keys():
-                        self.diffs_by_guid[guid] = dict()
-                    self.diffs_by_guid[guid][aircraft_name] = diff
-                if diff.serial is not None:
-                    serial = diff.serial.lower()
-                    if serial not in self.diffs_by_serial.keys():
-                        self.diffs_by_serial[serial] = dict()
-                    if aircraft_name not in self.diffs_by_serial[serial].keys():
-                        self.diffs_by_serial[serial][aircraft_name] = list()
-                    self.diffs_by_serial[serial][aircraft_name].append(diff)
-        self.dcs_imported = True
 
-    def export_dcs(self, device):
+        self.reload_profiles()
 
-        def store_to_file(dev:Device, p, d):
-            d.embedded_dict = {"device_serial_number": dev.serial_number}
-            if hasattr(dev, "build_id"):
-                d.embedded_dict["build_id"] = dev.build_id
-            if not os.path.exists(p):
-                os.makedirs(p)
-            for filename in os.listdir(p):
-                if dev.instance_guid.lower() in filename.lower():
-                    d.store_to_file(os.path.join(p, filename))
-                    return
-            # if there is no valid file there, create one
-            filename = str(dev)
-            d.serial = dev.serial_number
-            d.store_to_file(os.path.join(p, filename))
+    @_run_in_dcspath
+    def reload_profiles(self):
+        self._populate_devices()
+        self._populate_input_profiles()
 
-        for aircraft, diff in self.get_diffs_for_device(device).items():
-            path = os.path.join(
-                self.dcs_savegames_path,
-                "Config",
-                "Input",
-                self.profiles[aircraft]["aircraftname"],
-                "Joystick"
-            )
-            if self.check_if_dcs_is_running():
-                messagebox.showwarning(
-                    title="DCS appears to be running!",
-                    message=f"You must restart DCS for changes to take effect!",
-                )
-            corrected_diff = diff - self.default_diffs[aircraft]
-            store_to_file(device, path, corrected_diff)
+        self._lua.execute("lfs = require('lfs')")
+        self._lua.execute("InputData = require('Input.Data')")
+        self._lua.execute("ProfileDatabase = require('Input.ProfileDatabase')")
+        self._lua.execute("DCS = require('DCS')")
+        self.unload_profiles()
+        user_config_path = str(os.path.join(self.dcs_savegames_path, 'Config', 'Input')).replace("\\", "/")
+        self._lua.execute(f"InputData.initialize('{user_config_path}/', './Config/Input/')")
+
+        self._lua.execute(f"profileInfos = ProfileDatabase.createDefaultProfilesSet('./Config/Input/', DCS.getInputProfiles())")
+        self._lua.execute(
+            "for i, profileInfo in ipairs(profileInfos) do\n"
+            "   InputData.createProfile(profileInfo\n)"
+            "end"
+        )
+
+    def _populate_devices(self):
+        # populate devices list in lua
+        for device in get_devices():
+            device_name = dcsify_device_name(device)
+            self._lua.execute(f"table.insert(devices, '{device_name}')")
+
+    def _populate_input_profiles(self):
+        profiles = {
+            "a-10a": {
+                "is_unit": True,
+                "path": './Mods/aircraft/A-10A/Input/a-10a'
+            }
+        }
+        for profile_name, profile in profiles.items():
+            self._lua.execute(f"_InputProfiles['{profile_name}'] = {slpp.encode(profile)}")
+
+    def _eval_to_py(self, command: str):
+        _lua = self._lua.eval(command)
+        _py = lua_to_py(_lua)
+        return _py
+
+    @_run_in_dcspath
+    def unload_profiles(self):
+        self._lua.execute(f"InputData.unloadProfiles()")
+
+    @_run_in_dcspath
+    def load_device_profile(self, profile_name: str, device_name: str, file_name: str):
+        self._lua.execute(f"InputData.loadDeviceProfile('{profile_name}', '{device_name}', '{file_name}')")
+
+    @_run_in_dcspath
+    def get_device_profile(self, profile_name: str, device_name: str):
+        return self._eval_to_py(f"InputData.getDeviceProfile('{profile_name}', '{device_name}')")
+
+    @_run_in_dcspath
+    def command_combos(self, profile_name: str, command_hash: str, device_name: str):
+        return self._eval_to_py(f"InputData.commandCombos('{profile_name}', '{command_hash}', '{device_name}')")
+
+    @_run_in_dcspath
+    def get_profile_key_commands(self, profile_name: str, category: str | None = None):
+        if category:
+            return self._eval_to_py(f"InputData.getProfileKeyCommands('{profile_name}', '{category}')")
+        else:
+            return self._eval_to_py(f"InputData.getProfileKeyCommands('{profile_name}')")
+
+    @_run_in_dcspath
+    def get_profile_axis_commands(self, profile_name: str):
+        return self._eval_to_py(f"InputData.getProfileAxisCommands('{profile_name}')")
+
+    @_run_in_dcspath
+    def get_profile_category_names(self, profile_name: str):
+        return self._eval_to_py(f"InputData.getProfileCategoryNames('{profile_name}')")
+
+    @_run_in_dcspath
+    def save_device_profile(self, profile_name: str, device_name: str, file_name: str):
+        self._lua.execute(f"InputData.saveDeviceProfile('{profile_name}', '{device_name}', '{file_name}')")
+
+    @_run_in_dcspath
+    def get_profile_modifiers(self, profile_name: str):
+        return self._eval_to_py(f"InputData.getProfileModifiers('{profile_name}')")
+
+    @_run_in_dcspath
+    def get_profile_names(self):
+        return self._eval_to_py(f"InputData.getProfileNames()")
+
+    @_run_in_dcspath
+    def get_profile_name_by_unit_name(self, unit_name: str):
+        return self._eval_to_py(f"InputData.getProfileNameByUnitName('{unit_name}')")
+
+    @_run_in_dcspath
+    def get_profile_unit_name(self, profile_name: str):
+        return self._eval_to_py(f"InputData.getProfileUnitName('{profile_name}')")
+
+    @_run_in_dcspath
+    def save_changes(self):
+        self._lua.execute(f"InputData.saveChanges()")
+
+    @_run_in_dcspath
+    def undo_changes(self):
+        self._lua.execute(f"InputData.undoChanges()")
+
+    @_run_in_dcspath
+    def clear_profile(self, profile_name: str, device_names: list[str]):
+        device_names_lua = slpp.encode(device_names)
+        self._lua.execute(f"InputData.clearProfile('{profile_name}', {device_names_lua})")
+
+    @_run_in_dcspath
+    def add_combo_to_key_command(self, profile_name: str, command_hash: str, device_name: str, combo):
+        self._lua.execute(f"InputData.addComboToKeyCommand('{profile_name}', '{command_hash}', '{device_name}', {combo})")
+
+    @_run_in_dcspath
+    def add_combo_to_axis_command(self, profile_name: str, command_hash: str, device_name: str, combo):
+        self._lua.execute(f"InputData.addComboToAxisCommand('{profile_name}', '{command_hash}', '{device_name}', {combo})")
+
+    @_run_in_dcspath
+    def remove_key_command_combos(self, profile_name: str, command_hash: str, device_name: str):
+        self._lua.execute(f"InputData.removeKeyCommandCombos('{profile_name}', '{command_hash}', '{device_name}')")
+
+    @_run_in_dcspath
+    def remove_axis_command_combos(self, profile_name: str, command_hash: str, device_name: str):
+        self._lua.execute(f"InputData.removeAxisCommandCombos('{profile_name}', '{command_hash}', '{device_name}')")
 
     def import_swpf(self, device: Device, path):
-        with open(path, "r") as f:
-            loaddict = json.load(f)
-        if isinstance(device, Switchology.SwitchologyDevice):
-            if loaddict.get("build_id", "") != device.build_id:
-                logging.error(f"Selected device's build id \"{device.build_id}\" does not match the profile's build id \"{loaddict.get('build_id', '')}\"")
-                return
-        # self.profile_name_variable.set(loaddict.get("profile_name", "unnamed profile"))
-        dcsdiffs = loaddict.get("DCSdiffs", {})
-        if dcsdiffs is {}:
-            logging.error(f"The file does not contain a DCS profile!")
-            return
-        self.get_diffs_for_device(device).clear()
-        for aircraft, diff_dict in dcsdiffs.items():
-            self.get_diffs_for_device(device)[aircraft] = Diff()
-            self.get_diffs_for_device(device)[aircraft].from_dict(diff_dict)
-        logging.info(f"Switchology profile loaded from \"{path}\"")
+        pass
 
     def export_swpf(self, device: Device, path, profile_name=""):
-        storedict = device.get_settings_dict()
-        storedict["profile_name"] = profile_name
-        storedict["DCSdiffs"] = dict()
-        for aircraft, diff in self.get_diffs_for_device(device).items():
-            storedict["DCSdiffs"][aircraft] = diff.to_dict()
-        with open(path, "w") as f:
-            json.dump(storedict, f, indent=4)
-        logging.info(f"Switchology profile stored to \"{path}\"")
+        pass
 
-    def clear_diffs_for_device(self, device:Device):
-        self.get_diffs_for_device(device).clear()
 
 
 class BindingsFrame(customtkinter.CTkFrame):
@@ -834,7 +284,7 @@ class BindingsFrame(customtkinter.CTkFrame):
         self.command_filter_str = ""
         self.controls = dict()
         self.open_popup_with_control = False
-        self.dpm = DCSProfileManager()
+        self.dpm = DCSProfileManager(find_dcs_savegames_path(), find_dcs_install_path())
         self.profile_name_variable = customtkinter.StringVar(value="unnamed profile")
         self.controls_frame = None
 
@@ -849,6 +299,11 @@ class BindingsFrame(customtkinter.CTkFrame):
                 self.activated = config.get("dcs_activated", False)
             except json.decoder.JSONDecodeError:
                 logging.warning(f"could not read dcs config in \"{filepath}\"")
+
+        # profilename = 'A-10A'
+        # devicename = 'Switchology MCP {C65522F0-8C08-11ef-8003-444553540000}'
+        # filename = "C:/Users/wolfg/Saved Games/DCS.openbeta/Config/Input/a-10a/joystick/Switchology MCP {C65522F0-8C08-11ef-8003-444553540000}.diff.lua"
+        # self.dpm.load_device_profile(profilename, devicename, filename)
 
         self.create_widgets()
 
@@ -868,7 +323,6 @@ class BindingsFrame(customtkinter.CTkFrame):
                 image=icon("wrench")
             ).grid()
             return
-        profiles_found = self.dpm.load_profiles(appdata_path)
 
         title_row = customtkinter.CTkFrame(master=self)
         title_row.grid(row=0)
@@ -944,11 +398,11 @@ class BindingsFrame(customtkinter.CTkFrame):
     def refresh(self):
         if not self.activated:
             return
-        if not self.dpm.dcs_imported:
-            self.dpm.import_dcs()
-            bbs = self.dpm.find_broken_bindings()
-            if bbs:
-                self.show_broken_bindings_popup(bbs)
+        # if not self.dpm.dcs_imported:
+        #     self.dpm.import_dcs()
+        #     bbs = self.dpm.find_broken_bindings()
+        #     if bbs:
+        #         self.show_broken_bindings_popup(bbs)
         self.populate_controls_list()
 
     def show_keybind_popup(self, control):
@@ -963,16 +417,18 @@ class BindingsFrame(customtkinter.CTkFrame):
             self.popup = None
 
         def bind(command, key):
-            if aircraft_selection.get() not in self.dpm.get_diffs_for_device(self.selected_device).keys():
-                self.dpm.get_diffs_for_device(self.selected_device)[aircraft_selection.get()] = Diff()
-            self.dpm.get_diffs_for_device(self.selected_device)[aircraft_selection.get()].add_diff(command, DiffEntry(key))
+            profile_name = aircraft_selection.get()
+            command_hash = command["hash"]
+            device_name = dcsify_device_name(self.selected_device)
+            combo = {"key": change_control_names_pyglet_to_dcs(key)}
+            self.dpm.add_combo_to_key_command(profile_name, command_hash, device_name, slpp.encode(combo))
             self.populate_controls_list()
             close()
 
         def switch_aircraft(choice):
             self.last_aircraft_choice = choice
             if not issubclass(type(control), AbsoluteAxis):
-                configlist = sorted(list(self.dpm.get_categories_for_aircraft(choice)))
+                configlist = sorted(list(self.dpm.get_profile_category_names(choice)))
                 category_selection.configure(
                     values=[all_categories_str] + configlist,
                 )
@@ -984,25 +440,24 @@ class BindingsFrame(customtkinter.CTkFrame):
             ac = aircraft_selection.get()
             if not choice:
                 choice = self.selected_category
+            commandlist = list()
             if choice == all_categories_str:
-                commandlist = list()
-                for cat in self.dpm.get_categories_for_aircraft(ac):
-                    commandlist += self.dpm.get_commands_for_aircraft_and_category(aircraft=ac, category=cat)
+                commandlist += self.dpm.get_profile_key_commands(ac)
                 self.selected_category = choice
             elif choice == axes_category_str:
-                commandlist = self.dpm.get_all_axis_commands_for_aircraft(ac)
+                commandlist = self.dpm.get_profile_axis_commands(ac)
             else:
-                commandlist = self.dpm.get_commands_for_aircraft_and_category(aircraft=ac, category=choice)
+                commandlist = self.dpm.get_profile_key_commands(ac, choice)
                 self.selected_category = choice
             for child in bindings_frame.winfo_children():
                 child.destroy()
             i = 0
-            for command in sorted(commandlist, key=lambda c: c.name):
-                if command_filter_var.get().lower() not in command.name.lower():
+            for command in sorted(commandlist, key=lambda c: c["name"]):
+                if command_filter_var.get().lower() not in command["name"].lower():
                     continue
                 btn = customtkinter.CTkButton(
                     master=bindings_frame,
-                    text=command.name,
+                    text=command["name"],
                     command=lambda cmd=command, key=control.raw_name: bind(cmd, key)
                 )
                 btn.grid(row=i, column=0, sticky="ew", padx=pad, pady=pad)
@@ -1028,10 +483,10 @@ class BindingsFrame(customtkinter.CTkFrame):
         )
         aircraft_label.grid(row=0, column=0)
         if self.last_aircraft_choice is None:
-            self.last_aircraft_choice = sorted(list(self.dpm.get_aircrafts()))[0]
+            self.last_aircraft_choice = sorted(list(self.dpm.get_profile_names()))[0]
         aircraft_selection = customtkinter.CTkOptionMenu(
             master=self.popup,
-            values=sorted(list(self.dpm.get_aircrafts())),
+            values=sorted(list(self.dpm.get_profile_names())),
             command=switch_aircraft,
         )
         aircraft_selection.grid(row=1, column=0, sticky="ew", padx=pad, pady=pad)
@@ -1046,7 +501,7 @@ class BindingsFrame(customtkinter.CTkFrame):
             category_label.grid(row=0, column=1)
             category_selection = customtkinter.CTkOptionMenu(
                 master=self.popup,
-                values=[all_categories_str] + sorted(list(self.dpm.get_categories_for_aircraft(self.last_aircraft_choice))),
+                values=[all_categories_str] + sorted(list(self.dpm.get_profile_category_names(self.last_aircraft_choice))),
                 command=switch_category,
             )
             category_selection.set(self.selected_category)
@@ -1091,13 +546,13 @@ class BindingsFrame(customtkinter.CTkFrame):
                 plugins_dict["dcs_activated"] = bool(self.activated)
                 with open(filepath, "w") as f:
                     json.dump(plugins_dict, f, indent=4)
-            if self.activated:
-                self.dpm.set_dcs_path(new_dcs_path)
-                self.dpm.set_dcs_savegames_path(new_dcs_savegames_path)
-                if old_dcs_path != new_dcs_path or old_dcs_savegames_path != new_dcs_savegames_path or len(self.dpm.profiles) == 0:
-                    self.dpm.load_profiles(appdata_path)
+            # if self.activated:
+            #     self.dpm.set_dcs_path(new_dcs_path)
+            #     self.dpm.set_dcs_savegames_path(new_dcs_savegames_path)
+            #     if old_dcs_path != new_dcs_path or old_dcs_savegames_path != new_dcs_savegames_path or len(self.dpm.profiles) == 0:
+            #         self.dpm.load_profiles(appdata_path)
             self.create_widgets()
-            self.dpm.import_dcs()
+            # self.dpm.import_dcs()
             self.populate_controls_list()
 
         def back_on_top():
@@ -1181,20 +636,25 @@ class BindingsFrame(customtkinter.CTkFrame):
         destroy_children(self.controls_frame)
         if self.selected_device is None:
             return
-        device_diffs = self.dpm.get_diffs_for_device(self.selected_device)
+
         for i, control in enumerate(self.selected_device.controls):
             self.controls[control] = None
             command_name_list = list()
-            for aircraft_name in device_diffs.keys():
+            for profile_name in self.dpm.get_profile_names():
+                # device_profile = self.dpm.get_device_profile(profile_name, dcsify_device_name(self.selected_device))
                 if issubclass(type(control), AbsoluteAxis):
-                    diff_dict = device_diffs[aircraft_name].axis_diffs
+                    commands = self.dpm.get_profile_axis_commands(profile_name)
                 else:
-                    diff_dict = device_diffs[aircraft_name].key_diffs
-                for command, entry in diff_dict.items():
-                    if control.raw_name in entry.active_controls:
-                        self.controls[control] = command
-                        command_name_list.append((aircraft_name, command))
-                        # break
+                    commands = self.dpm.get_profile_key_commands(profile_name)
+                for command in commands:
+                    for device_name, combo in command["combos"].items():
+                        if device_name.lower() != dcsify_device_name(self.selected_device).lower():
+                            continue
+                        if len(combo) == 0:
+                            continue
+                        for c in combo:
+                            if c["key"] == control.raw_name:
+                                command_name_list.append((profile_name, command))
 
             controls_line_frame = customtkinter.CTkFrame(master=self.controls_frame)
             controls_line_frame.grid_columnconfigure(1, weight=1)
@@ -1215,60 +675,66 @@ class BindingsFrame(customtkinter.CTkFrame):
             for j, (aircraft, command) in enumerate(command_name_list):
                 binding = BindingButton(
                     master=controls_line_frame,
-                    text=f"{aircraft.strip()}: {command.name.strip()}",
+                    text=f"{aircraft.strip()}: {command['name'].strip()}",
                     command=lambda a=aircraft, c=command, k=control: self.remove_binding(a, c, k),
                 )
                 binding.bind('<Enter>', binding.configure, )
                 binding.grid(row=j, column=1, sticky="w")
 
-    def remove_binding(self, aircraft, command, control):
+    def remove_binding(self, profile_name, command, control):
         ans = messagebox.askyesnocancel(
-            title=f"Remove {command.name}",
-            message=f"Do you want to remove \"{command.name}\" from \"{control.raw_name}\" for \"{aircraft}\"?"
+            title=f"Remove {command['name']}",
+            message=f"Do you want to remove \"{command['name']}\" from \"{control.raw_name}\" for \"{profile_name}\"?"
         )
         if not ans:
             return
-        self.dpm.get_diffs_for_device(self.selected_device)[aircraft].remove_diff(command, DiffEntry(control.raw_name))
+        if issubclass(type(control), AbsoluteAxis):
+            self.dpm.remove_axis_command_combos(profile_name, command["hash"], dcsify_device_name(self.selected_device))
+        else:
+            self.dpm.remove_key_command_combos(profile_name, command["hash"], dcsify_device_name(self.selected_device))
         self.populate_controls_list()
 
     def clear_diffs(self):
         self.profile_name_variable.set("unnamed profile")
-        self.dpm.clear_diffs_for_device(self.selected_device)
+        for profile_name in self.dpm.get_profile_names():
+            self.dpm.clear_profile(profile_name, [dcsify_device_name(self.selected_device)])
         self.populate_controls_list()
 
     def push_to_dcs(self):
-        self.dpm.export_dcs(self.selected_device)
+        self.dpm.save_changes()
 
     def load_from_dcs(self):
-        self.dpm.import_dcs()
+        self.dpm.reload_profiles()
         self.populate_controls_list()
 
     def load_from_swpf(self):
-        if any(diff.unsaved_changes for diff in self.dpm.get_diffs_for_device(self.selected_device).values()):
-            ans = messagebox.askokcancel(
-                "Warning",
-                "Your profile has unsaved changes! If you continue, those will be lost!",
-                parent=self
-            )
-            if not ans:
-                return
-        path = filedialog.askopenfilename(
-            title='Select path',
-            filetypes=[("Switchology profile", ".swpf")],
-        )
-        if not os.path.isfile(path):
-            return
-        self.dpm.import_swpf(self.selected_device, path)
-        self.populate_controls_list()
+        return
+        # if any(diff.unsaved_changes for diff in self.dpm.get_diffs_for_device(self.selected_device).values()):
+        #     ans = messagebox.askokcancel(
+        #         "Warning",
+        #         "Your profile has unsaved changes! If you continue, those will be lost!",
+        #         parent=self
+        #     )
+        #     if not ans:
+        #         return
+        # path = filedialog.askopenfilename(
+        #     title='Select path',
+        #     filetypes=[("Switchology profile", ".swpf")],
+        # )
+        # if not os.path.isfile(path):
+        #     return
+        # self.dpm.import_swpf(self.selected_device, path)
+        # self.populate_controls_list()
 
     def share_to_swpf(self):
-        path = filedialog.asksaveasfilename(
-            title='Select path',
-            filetypes=[("Switchology profile", ".swpf")],
-        )
-        if not path.endswith(".swpf"):
-            path += ".swpf"
-        self.dpm.export_swpf(self.selected_device, path)
+        return
+        # path = filedialog.asksaveasfilename(
+        #     title='Select path',
+        #     filetypes=[("Switchology profile", ".swpf")],
+        # )
+        # if not path.endswith(".swpf"):
+        #     path += ".swpf"
+        # self.dpm.export_swpf(self.selected_device, path)
 
     def open_popup_on_control(self, value, control):
         if not self.open_popup_with_control:
@@ -1383,8 +849,8 @@ class BindingButton(customtkinter.CTkFrame):
         command = kwargs.pop("command", None)
         super().__init__(
             master=master,
-            bg_color=master._fg_color,
-            fg_color=master._fg_color,
+            bg_color=master._fg_color,  # noqa
+            fg_color=master._fg_color,  # noqa
             **kwargs,
         )
         self._label = customtkinter.CTkLabel(
@@ -1399,7 +865,7 @@ class BindingButton(customtkinter.CTkFrame):
             bg_color=self._fg_color,
             fg_color=self._fg_color,
             hover_color="red",
-            border_color=self._label._text_color,
+            border_color=self._label._text_color,  # noqa
             command=command,
             height=button_size,
             width=button_size,
@@ -1418,18 +884,25 @@ def main():
         format='%(asctime)s - %(message)s',
     )
 
-    dpm = DCSProfileManager()
-    dpm.set_dcs_path(find_dcs_install_path())
-    dpm.set_dcs_savegames_path(find_dcs_savegames_path())
-    dpm.scan_for_profiles()
+    dcspath = r"Z:\DCS World OpenBeta"
+    dcssavegamespath = r"C:\Users\wolfg\Saved Games"
 
-    for aircraft in dpm.get_aircrafts():
-        print(f"{aircraft}")
-        for category in dpm.get_categories_for_aircraft(aircraft):
-            print(f"\t{category}")
+    profilename = 'A-10A'
+    devicename = 'Switchology MCP {C65522F0-8C08-11ef-8003-444553540000}'
+    filename = "C:/Users/wolfg/Saved Games/DCS.openbeta/Config/Input/a-10a/joystick/Switchology MCP {C65522F0-8C08-11ef-8003-444553540000}.diff.lua"
 
-    diff = Diff()
+    did = DCSProfileManager(
+        dcs_savegames_path=dcssavegamespath,
+        dcs_path=dcspath,
+    )
+    did.load_device_profile(profilename, devicename, filename)
+    profiles = did.get_device_profile(profilename, devicename)
+    categories = did.get_profile_category_names(profilename)
+    key_commmands = did.get_profile_key_commands(profilename)
+    axis_commands = did.get_profile_axis_commands(profilename)
+    # did.clear_profile(profilename, [devicename, devicename])
 
+    did._lua.execute("for i, device in ipairs(Input.getDevices()) do print(device) end")
 
 if __name__ == "__main__":
     main()
