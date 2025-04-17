@@ -533,7 +533,13 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
             stdout=subprocess.PIPE
         )
         s = ""
+        line = ""
         for c in iter(lambda: self.updateproc.stdout.read(1), b""):
+            if c.decode() == "\n":
+                logging.debug(line)
+                line=""
+            else:
+                line += c.decode()
             if c == b'%':
                 v = int(s[-3:]) / 100
                 self.pro_upfw.set(v)
