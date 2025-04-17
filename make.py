@@ -96,7 +96,7 @@ def main():
     basewd = os.getcwd()
     os.chdir(buildpath)
     with open(os.path.join(f"{buildpath}", "Companion App Debug Mode.cmd"), "w") as f:
-        f.write(f'start "" .\\{os.path.relpath(python_dir_path)}\pythonw.exe gui.py -d --logfile \"log.txt\"\n')
+        f.write(f'start "" .\\{os.path.relpath(python_dir_path)}\python.exe gui.py -d --logfile \"log.txt\"\n')
         f.write("exit 0")
     os.chdir(basewd)
 
