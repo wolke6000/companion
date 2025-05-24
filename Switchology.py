@@ -354,8 +354,16 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         value = 256 * int(self.var_mode1.get()) + self.mode2s.index(self.var_mode2.get())
         self.var_mode.set(f"0x{value:04x}")
 
+    def module_mode_8way_update(self, choice):
+        if choice == "as 8+1 buttons":
+            self.module_modes = self.module_modes | 0x01
+        else:
+            self.module_modes = self.module_modes & ~0x01
+
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
+
+        self.module_modes = 0x00
 
         self.firmware_update_checked = False
 
@@ -422,6 +430,20 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.ent_blfc = customtkinter.CTkEntry(self, textvariable=self.var_blfc)
         self.ent_blfc.grid(row=7, column=1)
 
+        frm_elmo = customtkinter.CTkFrame(self)
+        lbl_elmo = customtkinter.CTkLabel(frm_elmo, text="Module modes")
+        lbl_elmo.grid(row=0, column=0, columnspan=2, sticky="ew")
+        self.lbl_8wmd = customtkinter.CTkLabel(frm_elmo, text="8-Way Switch Mode", padx=2, pady=2)
+        self.lbl_8wmd.grid(row=1, column=0, padx=2, sticky="w")
+        self.cbx_8wmd = customtkinter.CTkComboBox(
+            master=frm_elmo,
+            values=["as 4+1 buttons", "as 8+1 buttons"],
+            command=self.module_mode_8way_update,
+            state="readonly",
+        )
+        self.cbx_8wmd.grid(row=1, column=1, padx=2, sticky="ew")
+        frm_elmo.grid(row=8, column=0, columnspan=2, sticky="ew")
+
         self.btn_write = customtkinter.CTkButton(self, text="Write", command=self.write_all)
         self.btn_write.grid()
         self.btn_reset = customtkinter.CTkButton(self, text="Reset", command=lambda: self.device.reset())
@@ -438,6 +460,12 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.var_udpe.set(device.update_period)
         self.var_blfc.set(device.backlight_factor)
 
+        self.module_modes = device.module_mode
+        if self.module_modes & 0x01:
+            self.cbx_8wmd.set("as 8+1 buttons")
+        else:
+            self.cbx_8wmd.set("as 4+1 buttons")
+
         mode = int(self.var_mode.get(), 16)
         mode1 = int(mode / 256)
         mode2 = int(mode % 256)
@@ -448,13 +476,14 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         for command in [
             f'sbm {self.var_mode.get()}',
             f'sup {hex(int(self.var_udpe.get()))}',
-            f'sbf {hex(int(self.var_blfc.get()))}'
+            f'sbf {hex(int(self.var_blfc.get()))}',
+            f'sem {hex(self.module_modes)}'
         ]:
             ans = self.device.send_command(command)
             if "ok" in ans.lower():
-                logging.info(f"Successful write to device")
+                logging.info(f"Successful write to device ({command})")
             else:
-                logging.error(f"Failed to write to device!")
+                logging.error(f"Failed to write to device ({command})!")
 
 
 class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
@@ -585,6 +614,7 @@ class SwitchologyDevice(Device):
         self._base_mode = None
         self._update_period = None
         self._backlight_factor = None
+        self._module_mode = None
         self.serial_itf = None
         self.port = None
         if not (self.vid, self.pid) in [
@@ -705,6 +735,13 @@ class SwitchologyDevice(Device):
         if not self._backlight_factor:
             self._backlight_factor = int(self.send_command('gbf'), 16)
         return self._backlight_factor
+
+    @property
+    def module_mode(self):
+        if not self._module_mode:
+            self._module_mode = int(self.send_command('gem'), 16)
+        return self._module_mode
+
 
 device_classes[(0x0483, 0xA4F5)] = SwitchologyDevice  # VID & PID assigned to Switchology MCP (starting with firmware v0.4.0)
 device_classes[(0x0483, 0xD431)] = SwitchologyDevice  # compatibility with arbitrary VID and PID for older firmware prior v0.4.0
