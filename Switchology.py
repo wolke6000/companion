@@ -5,6 +5,8 @@ import time
 import customtkinter
 from tkinter import StringVar, filedialog, messagebox
 
+import semantic_version
+
 import requests
 from tempfile import TemporaryDirectory
 
@@ -610,6 +612,7 @@ class SwitchologyDevice(Device):
         super().__init__(*args)
         self._build_id = None
         self._fw_ver = None
+        self._sem_fw_ver = None
         self._hw_ver = None
         self._base_mode = None
         self._update_period = None
@@ -717,6 +720,7 @@ class SwitchologyDevice(Device):
     def fwver(self):
         if not self._fw_ver:
             self._fw_ver = self.send_command('gfw')
+            self._sem_fw_ver = semantic_version.Version(self._fw_ver.replace("v", ""))
         return self._fw_ver
 
     @property
