@@ -5,6 +5,8 @@ import time
 import customtkinter
 from tkinter import StringVar, filedialog, messagebox
 
+import semantic_version
+
 import requests
 from tempfile import TemporaryDirectory
 
@@ -610,6 +612,7 @@ class SwitchologyDevice(Device):
         super().__init__(*args)
         self._build_id = None
         self._fw_ver = None
+        self._sem_fw_ver = None
         self._hw_ver = None
         self._base_mode = None
         self._update_period = None
@@ -634,6 +637,7 @@ class SwitchologyDevice(Device):
                 raise TimeoutError
             logging.debug("enumerating comports...")
             for comport in comports():
+                logging.debug(f"...{comport.serial_number} at {comport.name}")
                 if comport.serial_number == self.serial_number:
                     self.port = comport
                     break
@@ -716,6 +720,7 @@ class SwitchologyDevice(Device):
     def fwver(self):
         if not self._fw_ver:
             self._fw_ver = self.send_command('gfw')
+            self._sem_fw_ver = semantic_version.Version(self._fw_ver.replace("v", ""))
         return self._fw_ver
 
     @property
@@ -738,6 +743,8 @@ class SwitchologyDevice(Device):
 
     @property
     def module_mode(self):
+        if self._sem_fw_ver < semantic_version.Version("0.4.4"):
+            return None
         if not self._module_mode:
             self._module_mode = int(self.send_command('gem'), 16)
         return self._module_mode
