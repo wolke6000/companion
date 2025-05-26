@@ -634,6 +634,7 @@ class SwitchologyDevice(Device):
                 raise TimeoutError
             logging.debug("enumerating comports...")
             for comport in comports():
+                logging.debug(f"...{comport.serial_number} at {comport.name}")
                 if comport.serial_number == self.serial_number:
                     self.port = comport
                     break
