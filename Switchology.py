@@ -743,6 +743,8 @@ class SwitchologyDevice(Device):
 
     @property
     def module_mode(self):
+        if self._sem_fw_ver < semantic_version.Version("0.4.4"):
+            return None
         if not self._module_mode:
             self._module_mode = int(self.send_command('gem'), 16)
         return self._module_mode
