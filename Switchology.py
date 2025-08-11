@@ -577,7 +577,11 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                 self.pro_upfw.update()
             else:
                 s += c.decode()
-        logging.info("firmware update complete!")
+        if "DFU state(7) = dfuMANIFEST, status(0) = No error condition is present" in s:
+            logging.info("Firmware update complete!")
+        else:
+            logging.error(f"Firmware update failed!")
+            logging.error(s)
         time.sleep(1)
         self.device._fw_ver = None
         self.refresh(self.device)
