@@ -558,8 +558,13 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         path_to_dfuutil = os.path.join("dfu-util", "dfu-util.exe")
 
         logging.debug(f"running dfutil...")
+        dfuargs = [
+            path_to_dfuutil,
+            "-D", self.firmwarepath.get(),
+            "-d" "0483:*,1209:db42",
+        ]
         self.updateproc = subprocess.Popen(
-            [path_to_dfuutil, "-D", self.firmwarepath.get()],
+            dfuargs,
             stderr=subprocess.PIPE,
             stdout=subprocess.PIPE
         )
