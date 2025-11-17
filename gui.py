@@ -227,6 +227,9 @@ def main():
         fh = logging.FileHandler(args.logfile)
         logging.getLogger().addHandler(fh)
 
+    # customtkinter.set_default_color_theme("sw_yellow.json")
+    customtkinter.ThemeManager.load_theme("sw_yellow.json")
+
     gui = GUI()
     gui.title(f"Switchology Companion App {gitrev}")
     # gui.geometry("1000x600")
