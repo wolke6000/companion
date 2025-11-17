@@ -362,6 +362,18 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         else:
             self.module_modes = self.module_modes & ~0x01
 
+    def module_mode_toggle_update(self, choice):
+        if choice == "Pulse":
+            self.module_modes = self.module_modes | 0x02
+        else:
+            self.module_modes = self.module_modes & ~0x02
+
+    def module_mode_rotabs_update(self, choice):
+        if choice == "Pulse":
+            self.module_modes = self.module_modes | 0x04
+        else:
+            self.module_modes = self.module_modes & ~0x04
+
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
@@ -435,6 +447,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         frm_elmo = customtkinter.CTkFrame(self)
         lbl_elmo = customtkinter.CTkLabel(frm_elmo, text="Module modes")
         lbl_elmo.grid(row=0, column=0, columnspan=2, sticky="ew")
+
         self.lbl_8wmd = customtkinter.CTkLabel(frm_elmo, text="8-Way Switch Mode", padx=2, pady=2)
         self.lbl_8wmd.grid(row=1, column=0, padx=2, sticky="w")
         self.cbx_8wmd = customtkinter.CTkComboBox(
@@ -444,6 +457,27 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             state="readonly",
         )
         self.cbx_8wmd.grid(row=1, column=1, padx=2, sticky="ew")
+
+        self.lbl_tgmd = customtkinter.CTkLabel(frm_elmo, text="Toggle Mode", padx=2, pady=2)
+        self.lbl_tgmd.grid(row=2, column=0, padx=2, sticky="w")
+        self.cbx_tgmd = customtkinter.CTkComboBox(
+            master=frm_elmo,
+            values=["Continuous", "Pulse"],
+            command=self.module_mode_toggle_update,
+            state="readonly",
+        )
+        self.cbx_tgmd.grid(row=2, column=1, padx=2, sticky="ew")
+
+        self.lbl_rsmd = customtkinter.CTkLabel(frm_elmo, text="Rotary Selector Mode", padx=2, pady=2)
+        self.lbl_rsmd.grid(row=3, column=0, padx=2, sticky="w")
+        self.cbx_rsmd = customtkinter.CTkComboBox(
+            master=frm_elmo,
+            values=["Continuous", "Pulse"],
+            command=self.module_mode_rotabs_update,
+            state="readonly",
+        )
+        self.cbx_rsmd.grid(row=3, column=1, padx=2, sticky="ew")
+
         frm_elmo.grid(row=8, column=0, columnspan=2, sticky="ew")
 
         self.btn_write = customtkinter.CTkButton(self, text="Write", command=self.write_all)
@@ -467,6 +501,15 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             self.cbx_8wmd.set("as 8+1 buttons")
         else:
             self.cbx_8wmd.set("as 4+1 buttons")
+        if self.module_modes & 0x02:
+            self.cbx_tgmd.set("Pulse")
+        else:
+            self.cbx_tgmd.set("Continuous")
+        if self.module_modes & 0x04:
+            self.cbx_rsmd.set("Pulse")
+        else:
+            self.cbx_rsmd.set("Continuous")
+
 
         mode = int(self.var_mode.get(), 16)
         mode1 = int(mode / 256)
