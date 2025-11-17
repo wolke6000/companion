@@ -133,12 +133,12 @@ class GUI(customtkinter.CTk):
 
 
 class DeviceListFrame(customtkinter.CTkFrame):
-    _sb_selected_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["selected_color"]
-    _sb_selected_hover_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["selected_hover_color"]
-    _sb_unselected_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"]
-    _sb_unselected_hover_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_hover_color"]
 
     def __init__(self, master: GUI, devices, command=None, **kwargs):
+        self._sb_selected_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["selected_color"]
+        self._sb_selected_hover_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["selected_hover_color"]
+        self._sb_unselected_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"]
+        self._sb_unselected_hover_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_hover_color"]
         super().__init__(master, **kwargs)
         self.device_buttons = list()
         self.devices = list(devices)
