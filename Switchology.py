@@ -109,7 +109,7 @@ class SwitchologyDeviceViewFrame(DeviceViewFrame):
             x = self.modulesize * (2 - ix) + self.offset_x
             y = self.modulesize * iy + self.offset_y
             module_id = self.modulegrid[(ix, iy)]["id"]
-            imgname = module_id.lower() + ".png"
+            imgname = "".join([ c if c.isupper() else "_"+c for c in module_id ]).lower() + ".png"
             direction = self.modulegrid[(ix, iy)]["rotation"].lower()
 
             if direction == N:
