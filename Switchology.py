@@ -348,12 +348,20 @@ class SwitchologyAlphaDeviceViewRame(SwitchologyDeviceViewFrame):
 
 
 class SwitchologyDeviceConfigFrame(DeviceViewFrame):
-    mode2s = ['A', ] + list(f"B{x}" for x in range(1, 15)) + ['C']
+    mode2s = dict({x: f"B{x}" for x in range(1, 15)})  # B-Modes
+    mode2s[0x00] = 'A'
+    mode2s[0x0F] = 'C'
+    mode2s[0x20] = 'D'
 
     def var_mode_update(self, *args):  # noqa
         if any(x == "" for x in [self.var_mode1.get(), self.var_mode2.get()]):
             return
-        value = 256 * int(self.var_mode1.get()) + self.mode2s.index(self.var_mode2.get())
+        bmode = 0x00
+        for k, v in self.mode2s.items():
+            if v == self.var_mode2.get():
+                bmode = k
+                break
+        value = 256 * int(self.var_mode1.get()) + bmode
         self.var_mode.set(f"0x{value:04x}")
 
     def module_mode_8way_update(self, choice):
@@ -423,7 +431,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.cbx_mode2 = customtkinter.CTkComboBox(
             self,
             variable=self.var_mode2,
-            values=self.mode2s,
+            values=list(self.mode2s.values()),
             state='readonly'
         )
         self.lbl_mode2.grid(column=0, row=4, sticky="w")
@@ -515,7 +523,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         mode1 = int(mode / 256)
         mode2 = int(mode % 256)
         self.var_mode1.set(str(mode1))
-        self.var_mode2.set(self.mode2s[mode2] if mode2 < len(self.mode2s) else mode2)
+        self.var_mode2.set(self.mode2s[mode2])
 
     def write_all(self):
         for command in [
