@@ -163,7 +163,7 @@ class Device:
         if self._serial_number is None:
             device_handle = ctypes.windll.kernel32.CreateFileW(self.guidandpath, 0, 3, None, 3, 0, None)
             if device_handle == -1:
-                print("Failed to open device handle")
+                logging.error("Failed to open device handle")
                 return ""
             serial_number = ctypes.create_unicode_buffer(256)
             bytes_returned = wintypes.DWORD()
@@ -177,6 +177,7 @@ class Device:
                 ctypes.byref(bytes_returned),
                 None,
             )
+            logging.debug(f"received {bytes_returned.value} bytes of serial number \"{serial_number.value}\"")
             ctypes.windll.kernel32.CloseHandle(device_handle)
             return serial_number.value
 
