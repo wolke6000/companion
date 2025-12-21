@@ -5,7 +5,7 @@ from tkinter import filedialog, messagebox
 import logging
 import argparse
 import customtkinter
-from Device import Device, device_classes
+from Device import Device, device_classes, AcquireError
 from Switchology import SwitchologyDevice, NotSwitchologyDeviceError
 
 import ctypes
@@ -160,7 +160,17 @@ class DeviceListFrame(customtkinter.CTkFrame):
             fg_color=self._sb_selected_color,
             hover_color=self._sb_selected_hover_color
         )
-        self.devices[self.selected_device_index].open()
+        try:
+            self.devices[self.selected_device_index].open()
+        except AcquireError:
+            messagebox.showerror(
+                title="Could not acquire device!",
+                message="Could not acquire device!\n"
+                        "Make sure there are modules plugged into the MCP base!\n"
+                        "Please unplug and replug device and restart companion.\n"
+                        "Companion will now quit."
+            )
+            quit()
         if self._command:
             self._command(self.devices[self.selected_device_index])
 

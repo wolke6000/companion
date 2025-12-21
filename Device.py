@@ -8,6 +8,8 @@ from pyglet.libs.win32.com import GUID
 from pyglet.libs.win32.dinput import DIPROPHEADER, WCHAR, MAX_PATH
 import customtkinter
 
+class AcquireError(Exception):
+    pass
 
 device_classes = dict()
 
@@ -200,7 +202,10 @@ class Device:
             control.on_change = lambda value, ctrl=control: self.control_on_change(ctrl, value)
         hwnd = _user32.GetActiveWindow()
         self.i_di_device.SetCooperativeLevel(hwnd, dinput.DISCL_BACKGROUND | dinput.DISCL_NONEXCLUSIVE)
-        self.i_di_device.Acquire()
+        try:
+            self.i_di_device.Acquire()
+        except OSError as e:
+            raise AcquireError
 
     def close(self):
         self.unsubscribe_all()
