@@ -27,6 +27,9 @@ from itertools import product
 class NotSwitchologyDeviceError(TypeError):
     pass
 
+class NoSerialNumberError(Exception):
+    pass
+
 
 class SwitchologyDeviceViewFrame(DeviceViewFrame):
 
@@ -691,6 +694,7 @@ class SwitchologyDevice(Device):
         self.close_comport()
 
     def open_comport(self):
+        logging.debug(f"looking for device \"{self.serial_number}\"")
         timout_at = time.thread_time_ns() + 1e9
         while self.port is None:
             if time.thread_time_ns() > timout_at:
@@ -699,6 +703,7 @@ class SwitchologyDevice(Device):
             for comport in comports():
                 logging.debug(f"...{comport.serial_number} at {comport.name}")
                 if comport.serial_number == self.serial_number:
+                    logging.debug(f"found device {comport.serial_number} at {comport.name}!")
                     self.port = comport
                     break
 
@@ -716,6 +721,7 @@ class SwitchologyDevice(Device):
                     xonxoff=False,
                     rtscts=False,
                     dsrdtr=False,
+                    timeout=1,
                 )
                 break
             except Exception as e:
@@ -736,6 +742,14 @@ class SwitchologyDevice(Device):
     def close_comport(self):
         if self.serial_itf:
             self.serial_itf.close()
+
+    @property
+    def serial_number(self):
+        super().serial_number
+        if self._serial_number in ["", None]:
+            raise NoSerialNumberError
+        return self._serial_number
+
 
     def send_command(self, command):
         self.open_comport()

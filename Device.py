@@ -8,6 +8,8 @@ from pyglet.libs.win32.com import GUID
 from pyglet.libs.win32.dinput import DIPROPHEADER, WCHAR, MAX_PATH
 import customtkinter
 
+class AcquireError(Exception):
+    pass
 
 device_classes = dict()
 
@@ -163,7 +165,7 @@ class Device:
         if self._serial_number is None:
             device_handle = ctypes.windll.kernel32.CreateFileW(self.guidandpath, 0, 3, None, 3, 0, None)
             if device_handle == -1:
-                print("Failed to open device handle")
+                logging.error("Failed to open device handle")
                 return ""
             serial_number = ctypes.create_unicode_buffer(256)
             bytes_returned = wintypes.DWORD()
@@ -177,7 +179,10 @@ class Device:
                 ctypes.byref(bytes_returned),
                 None,
             )
+
+            logging.debug(f"received {bytes_returned.value} bytes of serial number \"{serial_number.value}\"")
             ctypes.windll.kernel32.CloseHandle(device_handle)
+            self._serial_number = serial_number.value
             return serial_number.value
 
     def add_subscriber(self, control, fun):
@@ -199,7 +204,10 @@ class Device:
             control.on_change = lambda value, ctrl=control: self.control_on_change(ctrl, value)
         hwnd = _user32.GetActiveWindow()
         self.i_di_device.SetCooperativeLevel(hwnd, dinput.DISCL_BACKGROUND | dinput.DISCL_NONEXCLUSIVE)
-        self.i_di_device.Acquire()
+        try:
+            self.i_di_device.Acquire()
+        except OSError as e:
+            raise AcquireError
 
     def close(self):
         self.unsubscribe_all()

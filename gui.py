@@ -5,8 +5,8 @@ from tkinter import filedialog, messagebox
 import logging
 import argparse
 import customtkinter
-from Device import Device, device_classes
-from Switchology import SwitchologyDevice, NotSwitchologyDeviceError
+from Device import Device, device_classes, AcquireError
+from Switchology import SwitchologyDevice, NotSwitchologyDeviceError, NoSerialNumberError
 
 import ctypes
 from pyglet.libs.win32 import _kernel32
@@ -160,21 +160,44 @@ class DeviceListFrame(customtkinter.CTkFrame):
             fg_color=self._sb_selected_color,
             hover_color=self._sb_selected_hover_color
         )
-        self.devices[self.selected_device_index].open()
+        try:
+            self.devices[self.selected_device_index].open()
+        except AcquireError:
+            messagebox.showerror(
+                title="Could not acquire device!",
+                message="Could not acquire device!\n"
+                        "Make sure there are modules plugged into the MCP base!\n"
+                        "Please unplug and replug device and restart companion.\n"
+                        "Companion will now quit."
+            )
+            quit()
         if self._command:
             self._command(self.devices[self.selected_device_index])
 
     def refresh(self):
         for i, device in enumerate(self.devices):
-            button = customtkinter.CTkButton(
-                self,
-                text="\n".join([device.instance_name, device.serial_number, device.instance_guid]),
-                command=lambda x=i: self.select(x),
-                fg_color=self._sb_unselected_color,
-                hover_color=self._sb_unselected_hover_color
-            )
-            button.grid(pady=5, padx=5)
-            self.device_buttons.append(button)
+            try:
+                btn_text = "\n".join([device.instance_name, device.serial_number, device.instance_guid])
+                button = customtkinter.CTkButton(
+                    self,
+                    text=btn_text,
+                    command=lambda x=i: self.select(x),
+                    fg_color=self._sb_unselected_color,
+                    hover_color=self._sb_unselected_hover_color
+                )
+                button.grid(pady=5, padx=5)
+                self.device_buttons.append(button)
+            except NoSerialNumberError:
+                messagebox.showerror(
+                    title=f"Could not retrieve serial number for {device.instance_name}!",
+                    message=f"Could not retrieve serial number for\n"
+                            f"\"{device.instance_name}\"\n"
+                            f"{device.instance_guid}!\n"
+                            f"The device may have stalled and will not show up in the device list\n"
+                            "Please unplug and replug device and restart companion.\n"
+                            "If the problem persists, please reboot the computer"
+                )
+
 
 
 class PathSelector(customtkinter.CTkFrame):
