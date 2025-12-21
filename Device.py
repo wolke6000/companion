@@ -179,8 +179,10 @@ class Device:
                 ctypes.byref(bytes_returned),
                 None,
             )
+
             logging.debug(f"received {bytes_returned.value} bytes of serial number \"{serial_number.value}\"")
             ctypes.windll.kernel32.CloseHandle(device_handle)
+            self._serial_number = serial_number.value
             return serial_number.value
 
     def add_subscriber(self, control, fun):

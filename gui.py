@@ -6,7 +6,7 @@ import logging
 import argparse
 import customtkinter
 from Device import Device, device_classes, AcquireError
-from Switchology import SwitchologyDevice, NotSwitchologyDeviceError
+from Switchology import SwitchologyDevice, NotSwitchologyDeviceError, NoSerialNumberError
 
 import ctypes
 from pyglet.libs.win32 import _kernel32
@@ -176,15 +176,28 @@ class DeviceListFrame(customtkinter.CTkFrame):
 
     def refresh(self):
         for i, device in enumerate(self.devices):
-            button = customtkinter.CTkButton(
-                self,
-                text="\n".join([device.instance_name, device.serial_number, device.instance_guid]),
-                command=lambda x=i: self.select(x),
-                fg_color=self._sb_unselected_color,
-                hover_color=self._sb_unselected_hover_color
-            )
-            button.grid(pady=5, padx=5)
-            self.device_buttons.append(button)
+            try:
+                btn_text = "\n".join([device.instance_name, device.serial_number, device.instance_guid])
+                button = customtkinter.CTkButton(
+                    self,
+                    text=btn_text,
+                    command=lambda x=i: self.select(x),
+                    fg_color=self._sb_unselected_color,
+                    hover_color=self._sb_unselected_hover_color
+                )
+                button.grid(pady=5, padx=5)
+                self.device_buttons.append(button)
+            except NoSerialNumberError:
+                messagebox.showerror(
+                    title=f"Could not retrieve serial number for {device.instance_name}!",
+                    message=f"Could not retrieve serial number for\n"
+                            f"\"{device.instance_name}\"\n"
+                            f"{device.instance_guid}!\n"
+                            f"The device may have stalled and will not show up in the device list\n"
+                            "Please unplug and replug device and restart companion.\n"
+                            "If the problem persists, please reboot the computer"
+                )
+
 
 
 class PathSelector(customtkinter.CTkFrame):

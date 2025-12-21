@@ -27,6 +27,9 @@ from itertools import product
 class NotSwitchologyDeviceError(TypeError):
     pass
 
+class NoSerialNumberError(Exception):
+    pass
+
 
 class SwitchologyDeviceViewFrame(DeviceViewFrame):
 
@@ -718,6 +721,7 @@ class SwitchologyDevice(Device):
                     xonxoff=False,
                     rtscts=False,
                     dsrdtr=False,
+                    timeout=1,
                 )
                 break
             except Exception as e:
@@ -738,6 +742,14 @@ class SwitchologyDevice(Device):
     def close_comport(self):
         if self.serial_itf:
             self.serial_itf.close()
+
+    @property
+    def serial_number(self):
+        super().serial_number
+        if self._serial_number in ["", None]:
+            raise NoSerialNumberError
+        return self._serial_number
+
 
     def send_command(self, command):
         self.open_comport()
