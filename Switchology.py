@@ -1,6 +1,7 @@
 import hashlib
 import subprocess
 import time
+import tkinter.messagebox
 
 import customtkinter
 from tkinter import StringVar, filedialog, messagebox
@@ -492,12 +493,10 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
 
         frm_elmo.grid(row=8, column=0, columnspan=2, sticky="ew")
 
-        self.btn_write = customtkinter.CTkButton(self, text="Write", command=self.write_all)
-        self.btn_write.grid()
-        self.btn_reset = customtkinter.CTkButton(self, text="Reset", command=lambda: self.device.reset())
-        self.btn_reset.grid()
-        self.btn_format = customtkinter.CTkButton(self, text="Format", command=lambda: self.device.send_command('fmt'))
-        self.btn_format.grid()
+        self.btn_write = customtkinter.CTkButton(self, text="Write and Restart", command=self.write_all)
+        self.btn_write.grid(row=9, column=0)
+        self.btn_reset = customtkinter.CTkButton(self, text="Factory Reset and Restart", command=self.factory_reset, fg_color="red", text_color="white")
+        self.btn_reset.grid(row=9, column=1)
 
     def refresh(self, device):
         self.device = device
@@ -541,6 +540,21 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
                 logging.info(f"Successful write to device ({command})")
             else:
                 logging.error(f"Failed to write to device ({command})!")
+        self.device.send_command('rst')
+
+    def factory_reset(self):
+        if not tkinter.messagebox.askokcancel(
+            title="Factory Reset",
+            message="This will reset all the configuration to default values!\nDo you wish to proceed?"
+        ):
+            return
+        ans = self.device.send_command('fmt')
+        if "ok" in ans.lower():
+            logging.info(f"Successful write to device (fmt)")
+            self.device.send_command('rst')
+        else:
+            logging.error(f"Failed to write to device (fmt)!")
+
 
 
 class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
