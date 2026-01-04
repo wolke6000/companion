@@ -380,10 +380,11 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             self.module_modes = self.module_modes & ~0x02
 
     def module_mode_rotabs_update(self, choice):
+        self.module_modes = self.module_modes & ~0x0C
         if choice == "Pulse":
             self.module_modes = self.module_modes | 0x04
-        else:
-            self.module_modes = self.module_modes & ~0x04
+        elif choice == "Encoder":
+            self.module_modes = self.module_modes | 0x08
 
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
@@ -483,7 +484,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.lbl_rsmd.grid(row=3, column=0, padx=2, sticky="w")
         self.cbx_rsmd = customtkinter.CTkComboBox(
             master=frm_elmo,
-            values=["Continuous", "Pulse"],
+            values=["Continuous", "Pulse", "Encoder"],
             command=self.module_mode_rotabs_update,
             state="readonly",
         )
