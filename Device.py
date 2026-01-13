@@ -95,7 +95,7 @@ class Device:
 
         self._buttons = dict()
         for bi in range(device_info.button_count):
-            self._buttons[bi] = Button(f"B{bi:02d}")
+            self._buttons[bi] = Button(f"B{bi:03d}")
 
         self._axes = dict()
         for axis_id in range(9):
@@ -173,7 +173,7 @@ class ControlIndicator(customtkinter.CTkLabel):
     def update_value(self, value):
         self.configure(
             text=f"{self.control.name}: {value}",
-            text_color_disabled="green"
+            # text_color_disabled="green"
         )
 
     def __init__(self, master, control, **kwargs):

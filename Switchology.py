@@ -61,7 +61,7 @@ class SwitchologyDeviceViewFrame(DeviceViewFrame):
             ci = ControlIndicator(self, control, width=80)
             if ypos > self.winfo_height():
                 ypos = 10 * self.scaling
-                xpos += 100 * self.scaling
+                xpos += 90 * self.scaling
             self.canvas.create_window(xpos, ypos, window=ci)
             device.add_subscriber(control, ci.update_value)
             ypos += 20 * self.scaling
