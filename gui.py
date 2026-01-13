@@ -39,6 +39,8 @@ def get_devices():
     devices = dict()
     device_infos = swinput.enumerate_devices()
     for device_info in device_infos:
+
+
         description_string = \
             f"Hash: {device_info.device_hash}\n" \
             f"\tManufacturer: \"{device_info.manufacturer}\"\n" \
@@ -57,6 +59,8 @@ def get_devices():
             pass  # no COM port found
         logging.debug(description_string)
         temp_device_class = device_classes.get((device_info.vid, device_info.pid), Device)
+        if temp_device_class != SwitchologyDevice:
+            continue
         devices[device_info.device_hash] = temp_device_class(device_info)
 
     logging.debug("Enumeration of HID Devices completed!")
@@ -246,6 +250,8 @@ def main():
 
     def dispatch_device_events():
         for this_report in swinput.read_reports(256):
+            if this_report.device_hash not in gui.devices:
+                continue
             if this_report.button_count > 0:
                 for i in range(this_report.button_count):
                     this_button = this_report.buttons[int(i / 32)] & (1 << (i % 32))
