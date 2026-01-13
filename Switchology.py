@@ -760,7 +760,6 @@ class SwitchologyDevice(Device):
 
     @property
     def serial_number(self):
-        super().serial_number
         if self._serial_number in ["", None]:
             raise NoSerialNumberError
         return self._serial_number
