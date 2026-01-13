@@ -5,13 +5,8 @@ from tkinter import filedialog, messagebox
 import logging
 import argparse
 import customtkinter
-from Device import Device, device_classes, AcquireError
+from Device import Device, device_classes
 from Switchology import SwitchologyDevice, NotSwitchologyDeviceError, NoSerialNumberError
-
-import ctypes
-from pyglet.libs.win32 import _kernel32
-from pyglet.libs.win32 import dinput
-from pyglet.input.base import Button, AbsoluteAxis
 
 import swinput
 

@@ -1,11 +1,4 @@
 import logging
-import ctypes
-from ctypes import wintypes
-from pyglet.input.win32 import directinput
-from pyglet.libs.win32 import _user32
-from pyglet.libs.win32 import dinput
-from pyglet.libs.win32.com import GUID
-from pyglet.libs.win32.dinput import DIPROPHEADER, WCHAR, MAX_PATH
 
 import swinput
 
