@@ -23,6 +23,7 @@ from tkinter import N, NE, E, SE, S, SW, W, NW, Canvas
 from copy import deepcopy
 from more_itertools import batched
 from itertools import product
+import swinput
 
 
 class NotSwitchologyDeviceError(TypeError):
@@ -709,18 +710,23 @@ class SwitchologyDevice(Device):
         self.close_comport()
 
     def open_comport(self):
-        logging.debug(f"looking for device \"{self.serial_number}\"")
-        timout_at = time.thread_time_ns() + 1e9
-        while self.port is None:
-            if time.thread_time_ns() > timout_at:
-                raise TimeoutError
-            logging.debug("enumerating comports...")
-            for comport in comports():
-                logging.debug(f"...{comport.serial_number} at {comport.name}")
-                if comport.serial_number == self.serial_number:
-                    logging.debug(f"found device {comport.serial_number} at {comport.name}!")
-                    self.port = comport
-                    break
+        logging.debug(f"retrieving comport via swinput...")
+        try:
+            self.port = swinput.get_com_port(self._hash)
+            logging.debug(f"found device at \"{self.port}\"")
+        except RuntimeError:
+            logging.debug(f"looking for device \"{self.serial_number}\"")
+            timout_at = time.thread_time_ns() + 1e9
+            while self.port is None:
+                if time.thread_time_ns() > timout_at:
+                    raise TimeoutError
+                logging.debug("enumerating comports...")
+                for comport in comports():
+                    logging.debug(f"...{comport.serial_number} at {comport.name}")
+                    if comport.serial_number == self.serial_number:
+                        logging.debug(f"found device {comport.serial_number} at {comport.name}!")
+                        self.port = comport.device
+                        break
 
         timout_at = time.thread_time_ns() + 1e9
         while self.serial_itf is None:
@@ -728,7 +734,7 @@ class SwitchologyDevice(Device):
                 raise TimeoutError
             try:
                 self.serial_itf = serial.Serial(
-                    port=self.port.device,
+                    port=self.port,
                     baudrate=9600,
                     bytesize=serial.EIGHTBITS,
                     parity=serial.PARITY_NONE,
