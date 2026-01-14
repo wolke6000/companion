@@ -74,15 +74,19 @@ class GUI(customtkinter.CTk):
     def change_loglevel(self, *args):  # noqa
         logging.getLogger().setLevel(logging.getLevelNamesMapping().get(self.var_llvl.get(), 'INFO'))
 
-    def change_device_frame(self, device):
+    def change_device_frame(self, device_hash):
         self.device_tabview.destroy()
         self.device_tabview = customtkinter.CTkTabview(self, width=600, height=550)
-        for tabname in device.tabs.keys():
+        if self.device_list_frame is None:
+            return
+        if device_hash is None:
+            return
+        for tabname in self.device_list_frame.devices[device_hash].tabs.keys():
             tab = self.device_tabview.add(tabname)
-            tabframe = device.tabs[tabname](tab, width=600, height=550)
+            tabframe = self.device_list_frame.devices[device_hash].tabs[tabname](tab, width=600, height=550)
             tabframe.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
             try:
-                tabframe.refresh(device)
+                tabframe.refresh(self.device_list_frame.devices[device_hash])
             except Exception as e:
                 logging.error(e)
                 continue
@@ -90,17 +94,15 @@ class GUI(customtkinter.CTk):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.device_list_frame = None
 
         if not os.path.exists(appdata_path):
             os.makedirs(appdata_path)
 
-        self.devices = get_devices()
-        swinput.start_capture()
-
         self.device_tabview = customtkinter.CTkTabview(self, width=600, height=550)
         self.device_tabview.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
-        self.device_list_frame = DeviceListFrame(self, self.devices, command=self.change_device_frame, width=200,
+        self.device_list_frame = DeviceListFrame(self, command=self.change_device_frame, width=200,
                                                  height=550)
         self.device_list_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
@@ -129,22 +131,52 @@ class GUI(customtkinter.CTk):
                 )
                 os.execl(sys.executable, os.path.abspath(__file__), *sys.argv)
 
-    def __del__(self):
-        swinput.stop_capture()
+
 
 class DeviceListFrame(customtkinter.CTkFrame):
 
-    def __init__(self, master: GUI, devices, command=None, **kwargs):
+    def __init__(self, master: GUI, command=None, **kwargs):
         self._sb_selected_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["selected_color"]
         self._sb_selected_hover_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["selected_hover_color"]
         self._sb_unselected_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"]
         self._sb_unselected_hover_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_hover_color"]
         super().__init__(master, **kwargs)
+        self._command = command
         self.device_buttons = dict()
-        self.devices = devices
+        self.devices = get_devices()
+        refresh_button = customtkinter.CTkButton(self, text="Refresh List", command=self.refresh)
+        refresh_button.grid(pady=5, padx=5, sticky="ew")
         self.refresh()
         self.selected_device_hash = None
-        self._command = command
+
+        self.after(100, self.dispatch_device_events)
+
+    def __del__(self):
+        swinput.stop_capture()
+
+
+    def dispatch_device_events(self):
+        if self.selected_device_hash is None:
+            try:
+                swinput.stop_capture()
+            except RuntimeError:
+                pass
+        else:
+            swinput.start_capture()
+            for this_report in swinput.read_reports(256):
+                if this_report.device_hash not in self.devices:
+                    continue
+                if this_report.button_count > 0:
+                    for i in range(this_report.button_count):
+                        this_button = this_report.buttons[int(i / 32)] & (1 << (i % 32))
+                        self.devices[this_report.device_hash].update_button(i, this_button != 0)
+
+                if this_report.axis_present:
+                    for axis_id in range(9):
+                        if this_report.axis_present & (1 << axis_id):
+                            self.devices[this_report.device_hash].update_axis(axis_id, this_report.axis[axis_id])
+        self.after(int(1000 / 60), self.dispatch_device_events)
+
 
     def select(self, device_hash):
         if len(self.device_buttons) == 0:
@@ -161,9 +193,16 @@ class DeviceListFrame(customtkinter.CTkFrame):
             hover_color=self._sb_selected_hover_color
         )
         if self._command:
-            self._command(self.devices[self.selected_device_hash])
+            self._command(self.selected_device_hash)
 
     def refresh(self):
+        self.selected_device_hash = None
+        self.devices.clear()
+        if self._command:
+            self._command(self.selected_device_hash)
+        self.devices = get_devices()
+        for device_button in self.device_buttons.values():
+            device_button.destroy()
         for i, (device_hash, device) in enumerate(self.devices.items()):
             try:
                 btn_text = "\n".join([device.product_name, device.serial_number, str(device.hash)])
@@ -174,8 +213,8 @@ class DeviceListFrame(customtkinter.CTkFrame):
                     fg_color=self._sb_unselected_color,
                     hover_color=self._sb_unselected_hover_color
                 )
-                button.grid(pady=5, padx=5)
-                self.device_buttons[device.hash] = (button)
+                button.grid(pady=5, padx=5, sticky="ew")
+                self.device_buttons[device.hash] = button
             except NoSerialNumberError:
                 messagebox.showerror(
                     title=f"Could not retrieve serial number for {device}!",
@@ -247,22 +286,6 @@ def main():
     lh = LogHandler(gui.txt_logs)
     logging.getLogger().addHandler(lh)
 
-    def dispatch_device_events():
-        for this_report in swinput.read_reports(256):
-            if this_report.device_hash not in gui.devices:
-                continue
-            if this_report.button_count > 0:
-                for i in range(this_report.button_count):
-                    this_button = this_report.buttons[int(i / 32)] & (1 << (i % 32))
-                    gui.devices[this_report.device_hash].update_button(i, this_button != 0)
-
-            if this_report.axis_present:
-                for axis_id in range(9):
-                    if this_report.axis_present & (1 << axis_id):
-                        gui.devices[this_report.device_hash].update_axis(axis_id, this_report.axis[axis_id])
-        gui.after(int(1000/60), dispatch_device_events)
-
-    gui.after(100, dispatch_device_events)
     logging.info("Program start")
     gui.mainloop()
 
