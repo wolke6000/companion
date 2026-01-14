@@ -5,13 +5,10 @@ from tkinter import filedialog, messagebox
 import logging
 import argparse
 import customtkinter
-from Device import Device, device_classes, AcquireError
+from Device import Device, device_classes
 from Switchology import SwitchologyDevice, NotSwitchologyDeviceError, NoSerialNumberError
 
-import ctypes
-from pyglet.libs.win32 import _kernel32
-from pyglet.libs.win32 import dinput
-from pyglet.input.base import Button, AbsoluteAxis
+import swinput
 
 from updater import check_for_update, update
 
@@ -37,37 +34,38 @@ class LogHandler(logging.Handler):
 
 
 def get_devices():
-    def _device_enum(device_instance, arg):
-        i_di_device = dinput.IDirectInputDevice8()
-        _i_dinput.CreateDevice(device_instance.contents.guidInstance, ctypes.byref(i_di_device), None)
-        product_guid = device_instance.contents.guidProduct
-        pid = (product_guid.Data1 >> 16) & 0xFFFF
-        vid = product_guid.Data1 & 0xFFFF
-        logging.debug(f"found device with VID: {hex(vid)}, PID: {hex(pid)}")
-        temp_device_class = device_classes.get((vid, pid), Device)
-        devices.append(temp_device_class(i_di_device, device_instance.contents))
-        return dinput.DIENUM_CONTINUE
+    logging.debug("Enumerating HID Devices...")
 
-    logging.debug("Enumerating DirectInput Devices...")
+    devices = dict()
+    device_infos = swinput.enumerate_devices()
+    for device_info in device_infos:
 
-    _i_dinput = dinput.IDirectInput8()
-    module_handle = _kernel32.GetModuleHandleW(None)
-    dinput.DirectInput8Create(
-        module_handle,
-        dinput.DIRECTINPUT_VERSION,
-        dinput.IID_IDirectInput8W,
-        ctypes.byref(_i_dinput),
-        None
-    )
-    devices = list()
-    _i_dinput.EnumDevices(
-        dinput.DI8DEVCLASS_GAMECTRL,
-        dinput.LPDIENUMDEVICESCALLBACK(_device_enum),
-        None,
-        dinput.DIEDFL_ATTACHEDONLY
-    )
-    logging.debug("Enumeration of DirectInput Devices completed!")
+
+        description_string = \
+            f"Hash: {device_info.device_hash}\n" \
+            f"\tManufacturer: \"{device_info.manufacturer}\"\n" \
+            f"\tProductName: \"{device_info.product_name}\"\n" \
+            f"\tSerial Number: \"{device_info.serial_number}\"\n" \
+            f"\tHID-Path: \"{device_info.hid_path}\"\n" \
+            f"\tVID: \"0x{device_info.vid:04X}\"\n" \
+            f"\tPID: \"0x{device_info.pid:04X}\"\n" \
+            f"\tUsagePage: \"0x{device_info.usage_page:04X}\"\n" \
+            f"\tUsage: \"0x{device_info.usage:04X}\"\n"
+
+        try:
+            comport = swinput.get_com_port(device_info.device_hash)
+            description_string += f"\tCOM-Port: \"{comport}\""
+        except RuntimeError as e:
+            pass  # no COM port found
+        logging.debug(description_string)
+        temp_device_class = device_classes.get((device_info.vid, device_info.pid), Device)
+        if temp_device_class != SwitchologyDevice:
+            continue
+        devices[device_info.device_hash] = temp_device_class(device_info)
+
+    logging.debug("Enumeration of HID Devices completed!")
     return devices
+
 
 
 class GUI(customtkinter.CTk):
@@ -97,6 +95,7 @@ class GUI(customtkinter.CTk):
             os.makedirs(appdata_path)
 
         self.devices = get_devices()
+        swinput.start_capture()
 
         self.device_tabview = customtkinter.CTkTabview(self, width=600, height=550)
         self.device_tabview.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
@@ -130,7 +129,8 @@ class GUI(customtkinter.CTk):
                 )
                 os.execl(sys.executable, os.path.abspath(__file__), *sys.argv)
 
-
+    def __del__(self):
+        swinput.stop_capture()
 
 class DeviceListFrame(customtkinter.CTkFrame):
 
@@ -140,53 +140,42 @@ class DeviceListFrame(customtkinter.CTkFrame):
         self._sb_unselected_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_color"]
         self._sb_unselected_hover_color = customtkinter.ThemeManager.theme["CTkSegmentedButton"]["unselected_hover_color"]
         super().__init__(master, **kwargs)
-        self.device_buttons = list()
-        self.devices = list(devices)
+        self.device_buttons = dict()
+        self.devices = devices
         self.refresh()
-        self.selected_device_index = None
+        self.selected_device_hash = None
         self._command = command
 
-    def select(self, device_index):
+    def select(self, device_hash):
         if len(self.device_buttons) == 0:
             return
-        if self.selected_device_index is not None:
-            self.device_buttons[self.selected_device_index].configure(
+        if self.selected_device_hash is not None:
+            self.device_buttons[self.selected_device_hash].configure(
                 fg_color=self._sb_unselected_color,
                 hover_color=self._sb_unselected_hover_color
             )
-            self.devices[self.selected_device_index].close()
-        self.selected_device_index = device_index
-        self.device_buttons[self.selected_device_index].configure(
+            self.devices[self.selected_device_hash].close()
+        self.selected_device_hash = device_hash
+        self.device_buttons[self.selected_device_hash].configure(
             fg_color=self._sb_selected_color,
             hover_color=self._sb_selected_hover_color
         )
-        try:
-            self.devices[self.selected_device_index].open()
-        except AcquireError:
-            messagebox.showerror(
-                title="Could not acquire device!",
-                message="Could not acquire device!\n"
-                        "Make sure there are modules plugged into the MCP base!\n"
-                        "Please unplug and replug device and restart companion.\n"
-                        "Companion will now quit."
-            )
-            quit()
         if self._command:
-            self._command(self.devices[self.selected_device_index])
+            self._command(self.devices[self.selected_device_hash])
 
     def refresh(self):
-        for i, device in enumerate(self.devices):
+        for i, (device_hash, device) in enumerate(self.devices.items()):
             try:
-                btn_text = "\n".join([device.instance_name, device.serial_number, device.instance_guid])
+                btn_text = "\n".join([device.product_name, device.serial_number, str(device.hash)])
                 button = customtkinter.CTkButton(
                     self,
                     text=btn_text,
-                    command=lambda x=i: self.select(x),
+                    command=lambda x=device.hash: self.select(x),
                     fg_color=self._sb_unselected_color,
                     hover_color=self._sb_unselected_hover_color
                 )
                 button.grid(pady=5, padx=5)
-                self.device_buttons.append(button)
+                self.device_buttons[device.hash] = (button)
             except NoSerialNumberError:
                 messagebox.showerror(
                     title=f"Could not retrieve serial number for {device.instance_name}!",
@@ -259,12 +248,22 @@ def main():
     lh = LogHandler(gui.txt_logs)
     logging.getLogger().addHandler(lh)
 
-    def dispatch_selected_device_events():
-        for device in gui.devices:
-            device.dispatch_events()
-        gui.after(100, dispatch_selected_device_events)
+    def dispatch_device_events():
+        for this_report in swinput.read_reports(256):
+            if this_report.device_hash not in gui.devices:
+                continue
+            if this_report.button_count > 0:
+                for i in range(this_report.button_count):
+                    this_button = this_report.buttons[int(i / 32)] & (1 << (i % 32))
+                    gui.devices[this_report.device_hash].update_button(i, this_button != 0)
 
-    gui.after(100, dispatch_selected_device_events)
+            if this_report.axis_present:
+                for axis_id in range(9):
+                    if this_report.axis_present & (1 << axis_id):
+                        gui.devices[this_report.device_hash].update_axis(axis_id, this_report.axis[axis_id])
+        gui.after(int(1000/60), dispatch_device_events)
+
+    gui.after(100, dispatch_device_events)
     logging.info("Program start")
     gui.mainloop()
 
