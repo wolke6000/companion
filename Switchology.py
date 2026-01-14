@@ -622,7 +622,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         logging.info("updating firmware...")
         self.device.send_command("btl")  # switch to bootloader
         time.sleep(0.1)
-        self.device.send_command("rst")  # reset
+        self.device.reset()  # reset
         time.sleep(1)
 
         path_to_dfuutil = os.path.join("dfu-util", "dfu-util.exe")
