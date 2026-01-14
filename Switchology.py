@@ -13,7 +13,7 @@ from tempfile import TemporaryDirectory
 
 from serial.serialutil import SerialException
 
-from Device import Device, DeviceViewFrame, ControlIndicator, device_classes
+from Device import Device, DeviceViewFrame, device_classes
 import serial
 from serial.tools.list_ports import comports
 import logging
@@ -37,7 +37,6 @@ class SwitchologyDeviceViewFrame(DeviceViewFrame):
 
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
-        self.scaling = customtkinter.ScalingTracker.get_widget_scaling(self)
         self.images = dict()
         self.subsample = kwargs.get("subsample", 3.556)
         self.load_images()
@@ -53,18 +52,7 @@ class SwitchologyDeviceViewFrame(DeviceViewFrame):
             child.destroy()
         self.device = device
         self.draw_device(device)
-
-        xpos = 405 * self.scaling
-        ypos = 10 * self.scaling
-        self.update()
-        for i, control in enumerate(self.device.get_controls()):
-            ci = ControlIndicator(self, control, width=80)
-            if ypos > self.winfo_height():
-                ypos = 10 * self.scaling
-                xpos += 90 * self.scaling
-            self.canvas.create_window(xpos, ypos, window=ci)
-            device.add_subscriber(control, ci.update_value)
-            ypos += 20 * self.scaling
+        self.draw_controls()
 
     def load_images(self):
         imgdir = r"res/modimgs/prototype_v_0_4"
@@ -84,13 +72,13 @@ class SwitchologyDeviceViewFrame(DeviceViewFrame):
         mode = customtkinter.get_appearance_mode()
         self.canvas = Canvas(
             self,
-            width=800*self.scaling,
+            width=400*self.scaling,
             height=600*self.scaling,
             background=self.cget("fg_color")[mode.lower() == 'dark'],
             bd=0,
             highlightthickness=0
         )
-        self.canvas.grid()
+        self.canvas.grid(row=0, column=0)
         self.canvas.delete("all")
         self.base_image = ImageTk.PhotoImage(self.images.get("base_3x5.png"))
         self.canvas.create_image(0, 0, image=self.base_image, anchor=NW)

@@ -178,10 +178,9 @@ class DeviceListFrame(customtkinter.CTkFrame):
                 self.device_buttons[device.hash] = (button)
             except NoSerialNumberError:
                 messagebox.showerror(
-                    title=f"Could not retrieve serial number for {device.instance_name}!",
+                    title=f"Could not retrieve serial number for {device}!",
                     message=f"Could not retrieve serial number for\n"
-                            f"\"{device.instance_name}\"\n"
-                            f"{device.instance_guid}!\n"
+                            f"\"{device}\"\n"
                             f"The device may have stalled and will not show up in the device list\n"
                             "Please unplug and replug device and restart companion.\n"
                             "If the problem persists, please reboot the computer"
