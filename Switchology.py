@@ -615,6 +615,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
 
     def update_firmware(self):
         logging.info("updating firmware on device...")
+        device_hash = self.device.hash
         self.device.send_command("btl")  # switch to bootloader
         time.sleep(0.1)
         self.device.reset()  # reset
@@ -666,9 +667,13 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                         f"Please disconnect and reconnect the device!"
             )
 
-        self.master.master.master.device_list_frame.selected_device_hash = None
+        device_list_frame = self.master.master.master.device_list_frame
+        device_list_frame.selected_device_hash = None
         time.sleep(5)
-        self.master.master.master.device_list_frame.refresh()
+        device_list_frame.refresh()
+        if device_hash in device_list_frame.devices.keys():
+            device_list_frame.select(device_hash)
+
 
     def update_from_file(self):
         self.pro_upfw['value'] = 0
