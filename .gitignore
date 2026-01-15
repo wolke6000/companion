@@ -166,3 +166,5 @@ cython_debug/
 /.venv311
 log.txt
 /backup
+
+*.pdb

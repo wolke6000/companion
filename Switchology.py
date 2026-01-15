@@ -551,26 +551,51 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
         self.firmwarepath = StringVar(value="")
-        self.var_fwve = StringVar(value="")
-
         self.btn_upol = customtkinter.CTkButton(self, text="Update from server", command=self.update_from_server)
-        self.btn_upol.grid(column=1, row=0, columnspan=2, padx=5, pady=5)
-        self.btn_slfw = customtkinter.CTkButton(self, text="Select file", command=self.select_file)
-        self.btn_slfw.grid(column=1, row=1, padx=5, pady=5)
-        self.btn_upfw = customtkinter.CTkButton(self, text="Update from file", command=self.update_firmware, state='disabled')
-        self.btn_upfw.grid(column=2, row=1, padx=5, pady=5)
-        self.ent_fwpt = customtkinter.CTkEntry(self, textvariable=self.firmwarepath, state='disabled')
-        self.ent_fwpt.grid(column=1, row=2, columnspan=2, padx=5, pady=5)
-        self.pro_upfw = customtkinter.CTkProgressBar(self, orientation="horizontal", mode='determinate')
-        self.pro_upfw.grid(column=1, row=3, columnspan=2, padx=5, pady=5)
+        self.btn_upol.grid(column=0, row=0, padx=5, pady=5)
+        self.btn_slfw = customtkinter.CTkButton(self, text="Update from file", command=self.update_from_file)
+        self.btn_slfw.grid(column=1, row=0, padx=5, pady=5)
+        self.lbl_info = customtkinter.CTkLabel(self, text="")
+        self.lbl_info.grid(column=0, row=1, columnspan=2, padx=5, pady=5)
+        self.pro_upfw = customtkinter.CTkProgressBar(self, orientation="horizontal", mode='determinate', width=400, height=15)
+        self.pro_upfw.grid(column=0, row=2, columnspan=2, padx=5, pady=5)
         self.pro_upfw.set(0)
 
     def refresh(self, device):
         self.device = device
-        self.var_fwve.set(device.fwver)
         self.update_from_server()
 
     def update_from_server(self):
+        def perform_update():
+            with TemporaryDirectory() as tempdir:
+                logging.info("firmware file downloading to PC...")
+                self.lbl_info.configure(text="Downloading to PC...")
+                logging.debug(f"temporary directory created: \"{tempdir}\"")
+                file_response = requests.get(response_json.get("url"))
+                hash_calculator = hashlib.sha256()
+                firmware_file_path = os.path.join(tempdir, f"{response_json.get('tag')}.bin")
+                with open(firmware_file_path, "w+b") as firmware_file:
+                    for chunk in file_response.iter_content(chunk_size=8192):
+                        firmware_file.write(chunk)
+                        hash_calculator.update(chunk)
+
+                    # firmware_file.seek(0)
+                firmware_hash = hash_calculator.hexdigest()
+
+                if firmware_hash != response_json.get('hash'):
+                    logging.error(f"firmware file download to PC was not successful!")
+                    self.lbl_info.configure(text="Downloading to PC not successful!")
+                    messagebox.showerror(
+                        title="Downloading to PC not successful!",
+                        message=f"The new firmware could not be downloaded to your PC!"
+                    )
+                    return
+
+                logging.info("firmware file downloaded to PC")
+                self.lbl_info.configure(text="Downloading to PC successful")
+                self.firmwarepath.set(firmware_file.name)
+                self.update_firmware()
+
         update_server_url = "https://us-central1-switchology-a3b47.cloudfunctions.net/download_latest_firmware"
         logging.info("reqeuesting firmware information from server...")
         response = requests.get(update_server_url)
@@ -585,29 +610,12 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                         f"published at: {response_json.get('published_at')}\n"
         )
         if ans == 'yes':
-            with TemporaryDirectory() as tempdir:
-                logging.debug(f"temporary directory created: \"{tempdir}\"")
-                file_response = requests.get(response_json.get("url"))
-                hash_calculator = hashlib.sha256()
-                firmware_file_path = os.path.join(tempdir, f"{response_json.get('tag')}.bin")
-                with open(firmware_file_path, "w+b") as firmware_file:
-                    for chunk in file_response.iter_content(chunk_size=8192):
-                        firmware_file.write(chunk)
-                        hash_calculator.update(chunk)
-
-                    # firmware_file.seek(0)
-                firmware_hash = hash_calculator.hexdigest()
-
-                if firmware_hash != response_json.get('hash'):
-                    logging.error(f"firmware download was not successfull!")
-                    return
-
-                logging.info("firmware download successfull")
-                self.firmwarepath.set(firmware_file.name)
-                self.update_firmware()
+            self.master.master.set("Update")
+            self.after(100, perform_update)
 
     def update_firmware(self):
-        logging.info("updating firmware...")
+        logging.info("updating firmware on device...")
+        device_hash = self.device.hash
         self.device.send_command("btl")  # switch to bootloader
         time.sleep(0.1)
         self.device.reset()  # reset
@@ -638,18 +646,36 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                 v = int(s[-3:]) / 100
                 self.pro_upfw.set(v)
                 self.pro_upfw.update()
+                self.lbl_info.configure(text=f"Updating... {int(v*100)}%")
             else:
                 s += c.decode()
         if "DFU state(7) = dfuMANIFEST, status(0) = No error condition is present" in s:
             logging.info("Firmware update complete!")
+            self.lbl_info.configure(text=f"Complete")
+            messagebox.showinfo(
+                title="Firmware update complete!",
+                message=f"Your device is now on the new version!"
+            )
         else:
             logging.error(f"Firmware update failed!")
+            self.lbl_info.configure(text=f"Failed!")
             logging.error(s)
-        time.sleep(1)
-        self.device._fw_ver = None
-        self.refresh(self.device)
+            messagebox.showerror(
+                title="Firmware update failed!",
+                message=f"The firmware update failed!"
+                        f"Your device should still be on the old version."
+                        f"Please disconnect and reconnect the device!"
+            )
 
-    def select_file(self):
+        device_list_frame = self.master.master.master.device_list_frame
+        device_list_frame.selected_device_hash = None
+        time.sleep(5)
+        device_list_frame.refresh()
+        if device_hash in device_list_frame.devices.keys():
+            device_list_frame.select(device_hash)
+
+
+    def update_from_file(self):
         self.pro_upfw['value'] = 0
         filetypes = (
             ('firmware files', '*.bin'),
@@ -663,9 +689,10 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
 
         if os.path.isfile(filename):
             self.firmwarepath.set(filename)
-            self.btn_upfw.configure(state="normal")
-            self.ent_fwpt.xview_moveto(1)
+            # self.btn_upfw.configure(state="normal")
+            # self.ent_fwpt.xview_moveto(1)
             logging.debug(f"firmware update file \"{filename}\" selected.")
+        self.update_firmware()
 
 
 class SwitchologyDevice(Device):
