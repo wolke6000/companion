@@ -94,6 +94,23 @@ class GUI(customtkinter.CTk):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        latest_version = check_for_update()
+        if latest_version:
+            ans = messagebox.askquestion(
+                title="Update available!",
+                message=f"There is a new version available!\n"
+                        f"Your version: \"{gitrev}\", latest version: \"{latest_version}\"\n"
+                        f"Do you want to update?"
+            )
+            if ans == "yes":
+                update()
+                messagebox.showinfo(
+                    title="Update complete!",
+                    message=f"The update to \"{latest_version}\" is complete. The programm will now restart!"
+                )
+                os.execl(sys.executable, os.path.abspath(__file__), *sys.argv)
+
         self.device_list_frame = None
 
         if not os.path.exists(appdata_path):
@@ -114,23 +131,6 @@ class GUI(customtkinter.CTk):
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
-
-        latest_version = check_for_update()
-        if latest_version:
-            ans = messagebox.askquestion(
-                title="Update available!",
-                message=f"There is a new version available!\n"
-                        f"Your version: \"{gitrev}\", latest version: \"{latest_version}\"\n"
-                        f"Do you want to update?"
-            )
-            if ans == "yes":
-                update()
-                messagebox.showinfo(
-                    title="Update complete!",
-                    message=f"The update to \"{latest_version}\" is complete. The programm will now restart!"
-                )
-                os.execl(sys.executable, os.path.abspath(__file__), *sys.argv)
-
 
 
 class DeviceListFrame(customtkinter.CTkFrame):
