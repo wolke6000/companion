@@ -630,6 +630,16 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
             self.after(100, perform_update)
 
     def update_firmware(self):
+        def wait_for_reconnect(numsec):
+            if numsec > 0:
+                self.lbl_info.configure(text=f"Complete. Waiting for device to restart {numsec}s...")
+                time.sleep(1)
+                self.after(1, wait_for_reconnect, (numsec-1))
+            else:
+                device_list_frame.refresh()
+                if device_hash in device_list_frame.devices.keys():
+                    device_list_frame.select(device_hash)
+
         logging.info("updating firmware on device...")
         device_hash = self.device.hash
         self.device.send_command("btl")  # switch to bootloader
@@ -685,11 +695,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
 
         device_list_frame = self.master.master.master.device_list_frame
         device_list_frame.selected_device_hash = None
-        time.sleep(5)
-        device_list_frame.refresh()
-        if device_hash in device_list_frame.devices.keys():
-            device_list_frame.select(device_hash)
-
+        wait_for_reconnect(5)
 
     def update_from_file(self):
         self.pro_upfw['value'] = 0

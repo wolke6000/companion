@@ -150,10 +150,14 @@ class DeviceListFrame(customtkinter.CTkFrame):
         self.selected_device_hash = None
 
         self.after(100, self.dispatch_device_events)
+        self.after(100, self.select_device_at_start)
 
     def __del__(self):
         swinput.stop_capture()
 
+    def select_device_at_start(self):
+        if len(self.devices) > 0:
+            self.select(list(self.devices.keys())[0])
 
     def dispatch_device_events(self):
         if self.selected_device_hash is None:
