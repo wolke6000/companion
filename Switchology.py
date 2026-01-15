@@ -557,9 +557,25 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         self.btn_slfw.grid(column=1, row=0, padx=5, pady=5)
         self.lbl_info = customtkinter.CTkLabel(self, text="")
         self.lbl_info.grid(column=0, row=1, columnspan=2, padx=5, pady=5)
-        self.pro_upfw = customtkinter.CTkProgressBar(self, orientation="horizontal", mode='determinate', width=400, height=15)
+        self.pro_upfw = customtkinter.CTkProgressBar(self, orientation="horizontal", mode='determinate', width=600, height=15)
         self.pro_upfw.grid(column=0, row=2, columnspan=2, padx=5, pady=5)
         self.pro_upfw.set(0)
+        self.txt_lice = customtkinter.CTkTextbox(self, width=600, height=400)
+        self.txt_lice.grid(column=0, row=3, columnspan=2, padx=5, pady=5)
+        self.txt_lice.insert("end",
+                             f"This software uses dfu-util, an open-source utility licensed under the GNU General Public License v2 (GPL-2.0).\n"
+                             f"\n"
+                             f"dfu-util is Copyright © its respective authors.\n"
+                             f"\n"
+                             f"The complete corresponding source code for dfu-util is available at:\n"
+                             f"https://dfu-util.sourceforge.net/\n"
+                             f"\n"
+                             f"A copy of the GNU GPL v2 license is included with this software.\n"
+                             f"\n\n"
+                             )
+        with open(r"dfu-util/gpl-2.0.txt") as f:
+            self.txt_lice.insert("end", "".join(f.readlines()))
+        self.txt_lice.configure(state="disabled")
 
     def refresh(self, device):
         self.device = device
