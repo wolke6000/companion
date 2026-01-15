@@ -6,7 +6,7 @@ HERE = Path(__file__).resolve().parent  # directory containing host.py
 # Allow Windows to resolve dependent DLLs from this folder too (Python 3.8+)
 os.add_dll_directory(str(HERE))
 dll_path = HERE / "swinput.dll"
-dll = WinDLL(str(dll_path))
+dll = CDLL(str(dll_path))
 
 class SWINPUT_Stats(Structure):
     _fields_ = [
