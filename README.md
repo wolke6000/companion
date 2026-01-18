@@ -1,6 +1,8 @@
 # Switchology Cockpit Companion
 
-The Switchology Cockpit Companion is a python tool for updating and changing settings of the Switchology Modular Control Panel.
+The Switchology Cockpit Companion is a python tool for updating and changing advanced settings of the Switchology Modular Control Panel.
+It is currently in the early stages of development.
+It is **not required for normal operation** and has no impact on the usability or reliability of the hardware.
 
 Learn more about the Switchology Modular Control Panel and/or get yourself a unit at the Switchology [website](https://switchology.io/)
 
