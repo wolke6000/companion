@@ -286,6 +286,7 @@ def main():
 
     gui = GUI()
     gui.title(f"Switchology Companion App {gitrev}")
+    gui.wm_iconbitmap("res/icon.ico")
     # gui.geometry("1000x600")
     lh = LogHandler(gui.txt_logs)
     logging.getLogger().addHandler(lh)
