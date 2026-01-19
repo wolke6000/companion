@@ -1,5 +1,5 @@
 #define MyAppName "Switchology Cockpit Companion"
-#define MyAppPublisher "Switchology e.U."
+#define MyAppPublisher "Switchology"
 #define MyAppExeName "Companion App.cmd"
 
 
@@ -39,5 +39,5 @@ Source: "{#srcdir}\*"; DestDir: "{app}"; Flags: recursesubdirs
 Name: "desktopicon"; Description: "Create a &desktop icon"; Flags: unchecked
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\res\icon.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\res\icon.ico"
