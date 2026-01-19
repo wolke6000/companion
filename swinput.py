@@ -8,6 +8,17 @@ os.add_dll_directory(str(HERE))
 dll_path = HERE / "swinput.dll"
 dll = CDLL(str(dll_path))
 
+SWINPUT_OK = 0
+SWINPUT_ERR = 1
+SWINPUT_ERR_INVALID_ARG = 2
+SWINPUT_ERR_NOT_RUNNING = 3
+SWINPUT_ERR_BUFFER_TOO_SMALL = 4
+SWINPUT_ERR_DEVICE_NOT_FOUND = 5
+SWINPUT_ERR_UNKNOWN_DEVICE = 6
+SWINPUT_ERR_DECODING_FAILED = 7
+SWINPUT_COM_NOT_FOUND = 8
+SWINPUT_ERR_WINAPI_FAILED = 1000
+
 class SWINPUT_Stats(Structure):
     _fields_ = [
         ("reports_written", c_uint64),
@@ -32,8 +43,8 @@ class SWINPUT_DeviceInfo(Structure):
         ("manufacturer", c_wchar * 512),
         ("button_count", c_uint16),
         ("axes_present", c_uint16),
-        ("axes_logical_min", c_uint32 * 16),
-        ("axes_logical_max", c_uint32 * 16)
+        ("axes_logical_min", c_int32 * 16),
+        ("axes_logical_max", c_int32 * 16)
     ]
 
 class SWINPUT_DecodedReport(Structure):
@@ -87,21 +98,36 @@ axis_names = [
 ]
 
 def enumerate_devices():
-    device_count = c_uint32(0)
-    # First call to get the count
-    result = dll.swinput_enum_devices(None, byref(device_count))
-    if result != 0:
-        raise RuntimeError(f"swinput_enum_devices failed with error code {result}")
-    
-    devices_array_type = SWINPUT_DeviceInfo * device_count.value
-    devices_array = devices_array_type()
-    
-    # Second call to get the actual device info
-    result = dll.swinput_enum_devices(devices_array, byref(device_count))
-    if result != 0:
-        raise RuntimeError(f"swinput_enum_devices failed with error code {result}")
-    
-    return devices_array[:device_count.value]
+    for attempt in range(2):
+        required = c_uint32(0)
+
+        # Pass 1: query required count
+        rc = dll.swinput_enum_devices(None, byref(required))
+        if rc != SWINPUT_OK:
+            raise RuntimeError(f"swinput_enum_devices(count) failed: {rc}")
+
+        n = required.value
+
+        if n == 0:
+            return []
+
+        devices_array_type = SWINPUT_DeviceInfo * n
+        devices_array = devices_array_type()
+
+        # Pass 2: provide capacity explicitly
+        capacity = c_uint32(n)
+        rc = dll.swinput_enum_devices(devices_array, byref(capacity))
+
+        if rc == SWINPUT_OK:
+            return list(devices_array[:capacity.value])
+
+        if rc == SWINPUT_ERR_BUFFER_TOO_SMALL:
+            # device set changed between calls; retry
+            continue
+
+        raise RuntimeError(f"swinput_enum_devices(data) failed: {rc}")
+
+    raise RuntimeError("swinput_enum_devices failed: device list unstable (changed repeatedly)")
 
 
 def start_capture(buffer_size=1024 * 1024, keyframe_interval_ms=1000, flags=1):
