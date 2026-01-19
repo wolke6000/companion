@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 import subprocess
 import tempfile
 import shutil
@@ -13,6 +14,8 @@ def cmd(c):
 
 
 def main():
+    load_dotenv()
+
     p = subprocess.run(["git", "describe", "--always", "--broken"], capture_output=True)
     gitrev = p.stdout.decode('ascii').strip()
     with open("gitrev.py", 'w') as f:
@@ -122,6 +125,11 @@ def main():
     # cmd(f"Compress-Archive -Path {buildpath} -DestinationPath \"{os.path.join(buildpath, gitrev)}.zip\"")
     # os.chdir(basewd)
     shutil.make_archive(buildpath, "zip", buildpath)
+
+    # create installer
+    print("creating installer...")
+    iscc_path = os.environ.get("ISCC_PATH")
+    cmd(f"\"{iscc_path}\" installer/setup.iss /Dgitrev={gitrev} /Dsrcdir=\"{buildpath}\"")
 
     print("All done!")
 
