@@ -5,7 +5,7 @@ import tkinter.messagebox
 
 import customtkinter
 from tkinter import StringVar, filedialog, messagebox
-
+import re
 import semantic_version
 
 import requests
@@ -613,7 +613,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                 self.update_firmware()
 
         update_server_url = "https://us-central1-switchology-a3b47.cloudfunctions.net/download_latest_firmware"
-        logging.info("reqeuesting firmware information from server...")
+        logging.info("requesting firmware information from server...")
         response = requests.get(update_server_url)
         response_json = response.json()
         if self.device.fwver == response_json.get('tag'):
@@ -850,8 +850,16 @@ class SwitchologyDevice(Device):
     @property
     def fwver(self):
         if not self._fw_ver:
-            self._fw_ver = self.send_command('gfw')
-            self._sem_fw_ver = semantic_version.Version(self._fw_ver.replace("v", ""))
+            for retry in range(3):
+                _fw_ver = self.send_command('gfw')
+                m = re.match("v\d+\.\d+\.\d+(\S*)?", _fw_ver)
+                if m is None:
+                    logging.warning(f"device provided invalid answer to \"gfw\", retry {retry+1} of 3")
+                    time.sleep(1)
+                    continue
+                self._fw_ver = _fw_ver
+                self._sem_fw_ver = semantic_version.Version(self._fw_ver.replace("v", ""))
+                break
         return self._fw_ver
 
     @property
