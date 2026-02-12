@@ -395,6 +395,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.var_conn = StringVar(value='')
         self.var_udpe = StringVar(value="")
         self.var_blfc = StringVar(value="")
+        self.var_jsdz = StringVar(value="")
+        self.var_jssa = StringVar(value="")
 
         self.lbl_fwve = customtkinter.CTkLabel(self, text='Firmware Version')
         self.lbl_fwve.grid(row=0, column=0, sticky="w")
@@ -447,7 +449,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.ent_blfc.grid(row=7, column=1)
 
         frm_elmo = customtkinter.CTkFrame(self)
-        lbl_elmo = customtkinter.CTkLabel(frm_elmo, text="Module modes")
+        lbl_elmo = customtkinter.CTkLabel(frm_elmo, text="Module settings")
         lbl_elmo.grid(row=0, column=0, columnspan=2, sticky="ew")
 
         self.lbl_8wmd = customtkinter.CTkLabel(frm_elmo, text="8-Way Switch Mode", padx=2, pady=2)
@@ -480,6 +482,16 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         )
         self.cbx_rsmd.grid(row=3, column=1, padx=2, sticky="ew")
 
+        self.lbl_jsdz = customtkinter.CTkLabel(frm_elmo, text="Joystick Deadzone", padx=2, pady=2)
+        self.lbl_jsdz.grid(row=4, column=0, padx=2, sticky="w")
+        self.ent_jsdz = customtkinter.CTkEntry(frm_elmo, textvariable=self.var_jsdz)
+        self.ent_jsdz.grid(row=4, column=1)
+
+        self.lbl_jsdz = customtkinter.CTkLabel(frm_elmo, text="Joystick Saturation", padx=2, pady=2)
+        self.lbl_jsdz.grid(row=5, column=0, padx=2, sticky="w")
+        self.ent_jsdz = customtkinter.CTkEntry(frm_elmo, textvariable=self.var_jssa)
+        self.ent_jsdz.grid(row=5, column=1)
+
         frm_elmo.grid(row=8, column=0, columnspan=2, sticky="ew")
 
         self.btn_write = customtkinter.CTkButton(self, text="Write and Restart", command=self.write_all)
@@ -495,6 +507,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.var_mode.set(device.base_mode)
         self.var_udpe.set(device.update_period)
         self.var_blfc.set(device.backlight_factor)
+        self.var_jsdz.set(device.joystick_deadzone)
+        self.var_jssa.set(device.joystick_saturation)
 
         self.module_modes = device.module_mode
         if self.module_modes & 0x01:
@@ -522,7 +536,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             f'sbm {self.var_mode.get()}',
             f'sup {hex(int(self.var_udpe.get()))}',
             f'sbf {hex(int(self.var_blfc.get()))}',
-            f'sem {hex(self.module_modes)}'
+            f'sem {hex(self.module_modes)}',
+            f'sjs {hex(int(self.var_jsdz.get())<<8 | int(self.var_jssa.get()))}',
         ]:
             ans = self.device.send_command(command)
             if "ok" in ans.lower():
@@ -734,6 +749,7 @@ class SwitchologyDevice(Device):
         self._update_period = None
         self._backlight_factor = None
         self._module_mode = None
+        self._joystick_settings = None
         self.serial_itf = None
         self.port = None
         if not (self.vid, self.pid) in [
@@ -887,6 +903,18 @@ class SwitchologyDevice(Device):
         if not self._module_mode:
             self._module_mode = int(self.send_command('gem'), 16)
         return self._module_mode
+
+    @property
+    def joystick_deadzone(self):
+        if not self._joystick_settings:
+            self._joystick_settings = int(self.send_command("gjs"), 16)
+        return self._joystick_settings >> 8
+
+    @property
+    def joystick_saturation(self):
+        if not self._joystick_settings:
+            self._joystick_settings = int(self.send_command("gjs"), 16)
+        return self._joystick_settings & 0x00FF
 
 
 device_classes[(0x0483, 0xA4F5)] = SwitchologyDevice  # VID & PID assigned to Switchology MCP (starting with firmware v0.4.0)
