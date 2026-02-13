@@ -24,10 +24,32 @@ def request_latest():
 
     return json.loads(ans.text)
 
+def get_latest_prerelease():
+    load_dotenv()
+    owner = "wolke6000"
+    repo = "companion"
+    url = f"https://api.github.com/repos/{owner}/{repo}/releases"
+    token = os.getenv('GITHUB_TOKEN')
+    if token:
+        headers = {
+            "Authorization": f"Bearer {os.getenv('GITHUB_TOKEN')}"
+        }
+    else:
+        headers = None
+    ans = requests.get(url, headers=headers)
+    releases = json.loads(ans.text)
+    releases.sort(key=lambda x: x["published_at"])
+    for release in releases:
+        if release["prerelease"]:
+            return release
+
+    return None
+
 
 def check_for_update():
-    ans_json = request_latest()
+    ans_json = get_latest_prerelease()
     tag_name = ans_json.get("tag_name")
+    return tag_name
     latest_version = Version(tag_name)
 
     try:
@@ -81,7 +103,7 @@ def update():
 
     # create_backup(str(datetime.datetime.now()).replace(":", ""))
 
-    ans_json = request_latest()
+    ans_json = get_latest_prerelease()
     zipball_url = ans_json.get('zipball_url')
     with TemporaryDirectory() as temp_dir:
         update_file = f"{temp_dir}\\update.zip"
