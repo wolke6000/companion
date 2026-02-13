@@ -18,6 +18,11 @@ def main():
 
     p = subprocess.run(["git", "describe", "--always", "--broken"], capture_output=True)
     gitrev = p.stdout.decode('ascii').strip()
+
+    gitrev_sane = "".join(c for c in gitrev if c.isalnum() or c in [' ', '-', '_', '.']).rstrip()
+    if gitrev_sane != gitrev:
+        raise Exception
+
     with open("gitrev.py", 'w') as f:
         f.write(f"gitrev = \"{gitrev}\"\n")
 
