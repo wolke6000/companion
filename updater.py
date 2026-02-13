@@ -1,5 +1,8 @@
 import datetime
 import os
+import subprocess
+import sys
+from pathlib import Path
 from tempfile import TemporaryDirectory
 import requests
 import json
@@ -104,29 +107,33 @@ def update():
     # create_backup(str(datetime.datetime.now()).replace(":", ""))
 
     ans_json = get_latest_prerelease()
-    zipball_url = ans_json.get('zipball_url')
-    with TemporaryDirectory() as temp_dir:
-        update_file = f"{temp_dir}\\update.zip"
-        update_dir = os.path.join(temp_dir, "update")
-        os.mkdir(update_dir)
+    for asset in ans_json['assets']:
+        if all([x in asset['name'] for x in [".exe", "Setup"]]):
+            download_url = asset['browser_download_url']
+            update_file = os.path.basename(download_url)
 
-        # download archive
-        token = os.getenv('GITHUB_TOKEN')
-        if token:
-            header = f"Authorization: Bearer {os.getenv('GITHUB_TOKEN')}"
-            cmd(f"curl -H \"{header}\" -L \"{zipball_url}\" -o \"{update_file}\"")  # with authentication token
-        else:
-            cmd(f"curl -L \"{zipball_url}\" -o \"{update_file}\"")  # without authentication token
+    update_dir = Path(os.environ["LOCALAPPDATA"]) / "Switchology" / "Updater"
+    update_dir.mkdir(parents=True, exist_ok=True)
+    setup_path = update_dir / update_file
 
-        cmd(f"tar -xf \"{update_file}\" -C \"{update_dir}\"")  # unpack archive
+    # download setup
+    token = os.getenv('GITHUB_TOKEN')
+    if token:
+        header = f"Authorization: Bearer {os.getenv('GITHUB_TOKEN')}"
+        cmd(f"curl -H \"{header}\" -L \"{download_url}\" -o \"{setup_path}\"")  # with authentication token
+    else:
+        cmd(f"curl -L \"{download_url}\" -o \"{setup_path}\"")  # without authentication token
 
-        directory = None
-        for d in os.listdir(update_dir):
-            directory = os.path.join(update_dir, d)
-            if os.path.isdir(directory):
-                break
-
-        cmd(f"xcopy \"{directory}\" \"{os.getcwd()}\" /s /y")  # copy files
+    subprocess.Popen(
+        [
+            setup_path,
+            # "/VERYSILENT",
+            # "/SUPPRESSMSGBOXES",
+            # "/NORESTART",
+            # "/CLOSEAPPLICATIONS"
+        ]
+    )
+    sys.exit(0)
 
     # write girev
     with open("gitrev.py", 'w') as f:

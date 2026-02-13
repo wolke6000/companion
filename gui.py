@@ -105,11 +105,6 @@ class GUI(customtkinter.CTk):
             )
             if ans == "yes":
                 update()
-                messagebox.showinfo(
-                    title="Update complete!",
-                    message=f"The update to \"{latest_version}\" is complete. The programm will now restart!"
-                )
-                os.execl(sys.executable, os.path.abspath(__file__), *sys.argv)
 
         self.device_list_frame = None
 
