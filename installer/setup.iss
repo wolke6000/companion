@@ -24,20 +24,22 @@ UsePreviousAppDir=yes
 UsePreviousGroup=yes
 
 CloseApplications=yes
-RestartApplications=yes
-
-AppMutex=SwitchologyAppMutex
+RestartApplications=no
 
 OutputDir={#srcdir}\..
 OutputBaseFilename=Companion_Setup_{#gitrev}
 
 [Files]
-Source: "{#srcdir}\*"; DestDir: "{app}"; Flags: recursesubdirs
+Source: "{#srcdir}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion createallsubdirs
 
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop icon"; Flags: unchecked
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\res\icon.ico"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\res\icon.ico"
+Name: "{group}\{#MyAppName}"; Filename: "{cmd}"; Parameters: "/c ""{app}\Companion App.cmd"""; WorkingDir: "{app}"; IconFilename: "{app}\res\icon.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{cmd}"; Parameters: "/c ""{app}\Companion App.cmd"""; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\res\icon.ico"
+
+[Run]
+Filename: "{app}\Readme.md"; Description: "View the README file"; Flags: postinstall shellexec skipifsilent unchecked
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags: nowait postinstall skipifsilent
