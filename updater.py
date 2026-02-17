@@ -7,9 +7,21 @@ from tempfile import TemporaryDirectory
 import requests
 import json
 from packaging.version import Version, InvalidVersion
-from make import cmd
+from make import cmd, sha256_file
 from dotenv import load_dotenv
+import hashlib
+from cryptography.hazmat.primitives import serialization
 
+
+def verify_manifest(manifest_bytes, signature_bytes):
+    public_key = serialization.load_pem_public_key(
+        b"""
+    -----BEGIN PUBLIC KEY-----
+    MCowBQYDK2VwAyEAbXhZyz71RvNnZl8qSzkv8uxCQx57f3RHHz6qmHWQfv8=
+    -----END PUBLIC KEY-----
+        """
+    )
+    public_key.verify(signature_bytes, manifest_bytes)
 
 def request_latest():
     load_dotenv()
@@ -107,23 +119,50 @@ def update():
     # create_backup(str(datetime.datetime.now()).replace(":", ""))
 
     ans_json = get_latest_prerelease()
+    update_file = None
+    manifest_json_url = None
+    manifest_sig_url = None
     for asset in ans_json['assets']:
-        if all([x in asset['name'] for x in [".exe", "Setup"]]):
+        if all([x in asset['name'] for x in [".exe", "Companion_Setup_"]]):
             download_url = asset['browser_download_url']
             update_file = os.path.basename(download_url)
+        elif asset['name'] == "manifest.json":
+            manifest_json_url =  asset['browser_download_url']
+        elif asset['name'] == "manifest.sig":
+            manifest_sig_url = asset['browser_download_url']
+
+    if update_file is None:
+        raise Exception
+    if manifest_json_url is None:
+        raise Exception
+    if manifest_sig_url is None:
+        raise Exception
+
 
     update_dir = Path(os.environ["LOCALAPPDATA"]) / "Switchology" / "Updater"
     update_dir.mkdir(parents=True, exist_ok=True)
     setup_path = update_dir / update_file
+    manifest_json_path = update_dir / 'manifest.json'
+    manifest_sig_path = update_dir / 'manifest.sig'
 
-    # download setup
+    # download setup and manifest
     token = os.getenv('GITHUB_TOKEN')
-    if token:
+    if token:  # with authentication token
         header = f"Authorization: Bearer {os.getenv('GITHUB_TOKEN')}"
-        cmd(f"curl -H \"{header}\" -L \"{download_url}\" -o \"{setup_path}\"")  # with authentication token
-    else:
-        cmd(f"curl -L \"{download_url}\" -o \"{setup_path}\"")  # without authentication token
+        cmd(f"curl -H \"{header}\" -L \"{download_url}\" -o \"{setup_path}\"")
+        cmd(f"curl -H \"{header}\" -L \"{manifest_json_url}\" -o \"{manifest_json_path}\"")
+        cmd(f"curl -H \"{header}\" -L \"{manifest_sig_url}\" -o \"{manifest_sig_path}\"")
+    else:  # without authentication token
+        cmd(f"curl -L \"{download_url}\" -o \"{setup_path}\"")
+        cmd(f"curl -L \"{manifest_json_url}\" -o \"{manifest_json_path}\"")
+        cmd(f"curl -L \"{manifest_sig_url}\" -o \"{manifest_sig_path}\"")
 
+    # verify signature, throws exception if the signature isn't valid:
+    # https://cryptography.io/en/latest/hazmat/primitives/asymmetric/dsa/#verification
+    with open(manifest_json_path, "rb") as fjson, open(manifest_sig_path, "rb") as fsig:
+         verify_manifest(fjson.read(), fsig.read())
+
+    # run setup
     subprocess.Popen(
         [
             setup_path,
