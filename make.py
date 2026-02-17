@@ -141,7 +141,7 @@ def main():
     cmd(f"\"{iscc_path}\" installer/setup.iss /Dgitrev={gitrev} /Dsrcdir=\"{staging_path}\"")
 
     installer_name = "Companion_Setup_" + gitrev + ".exe"
-    installer_path = os.path.join(os.getcwd(), "builds", installer_name)
+    installer_path = os.path.join(buildpath, installer_name)
 
     # create manifest.json
     os.chdir(buildpath)
