@@ -1,16 +1,16 @@
-import datetime
 import os
 import subprocess
 import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
 import requests
 import json
+
+from cryptography.exceptions import InvalidSignature
 from packaging.version import Version, InvalidVersion
-from make import cmd, sha256_file
+from make import cmd
 from dotenv import load_dotenv
-import hashlib
 from cryptography.hazmat.primitives import serialization
+from tkinter import messagebox
 
 
 def verify_manifest(manifest_bytes, signature_bytes):
@@ -131,13 +131,21 @@ def update():
         elif asset['name'] == "manifest.sig":
             manifest_sig_url = asset['browser_download_url']
 
+    files_not_found_in_assets = list()
     if update_file is None:
-        raise Exception
+        files_not_found_in_assets.append("Companion Setup file")
     if manifest_json_url is None:
-        raise Exception
+        files_not_found_in_assets.append("manifest.json")
     if manifest_sig_url is None:
-        raise Exception
-
+        files_not_found_in_assets.append("manifest.sig")
+    if len(files_not_found_in_assets > 0):
+        messagebox.showerror(
+            title=f"Some assets for the release are not available for download!",
+            message=f"The following assets are not available for download in the release\n"
+                    f"{', '.join(files_not_found_in_assets)}\n"
+                    f"Update will be aborted"
+        )
+        return
 
     update_dir = Path(os.environ["LOCALAPPDATA"]) / "Switchology" / "Updater"
     update_dir.mkdir(parents=True, exist_ok=True)
@@ -159,8 +167,16 @@ def update():
 
     # verify signature, throws exception if the signature isn't valid:
     # https://cryptography.io/en/latest/hazmat/primitives/asymmetric/dsa/#verification
-    with open(manifest_json_path, "rb") as fjson, open(manifest_sig_path, "rb") as fsig:
-         verify_manifest(fjson.read(), fsig.read())
+    try:
+        with open(manifest_json_path, "rb") as fjson, open(manifest_sig_path, "rb") as fsig:
+             verify_manifest(fjson.read(), fsig.read())
+    except InvalidSignature:
+        messagebox.showerror(
+            title=f"The signature of the downloaded setup file in invalid!",
+            message=f"The signature of the downloaded setup file in invalid!\n"
+                    f"Update will be aborted"
+        )
+        return
 
     # run setup
     subprocess.Popen(
@@ -173,10 +189,6 @@ def update():
         ]
     )
     sys.exit(0)
-
-    # write girev
-    with open("gitrev.py", 'w') as f:
-        f.write(f"gitrev = \"{ans_json.get('tag_name')}\"\n")
 
 
 def main():
