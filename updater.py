@@ -53,7 +53,7 @@ def get_latest_prerelease():
         headers = None
     ans = requests.get(url, headers=headers)
     releases = json.loads(ans.text)
-    releases.sort(key=lambda x: x["published_at"])
+    releases.sort(key=lambda x: x["published_at"], reverse=True)
     for release in releases:
         if release["prerelease"]:
             return release
