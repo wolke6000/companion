@@ -83,41 +83,7 @@ def check_for_update():
         return None
 
 
-def create_backup(version):
-
-    def build_file_list(directory):
-        filelist = list()
-        for file in os.listdir(directory):
-            if file in gitignore and file not in ["gitrev.py", "res"]:
-                continue
-            file_path = os.path.join(directory, file)
-            if "backup" in file_path:
-                continue  # don't backup backups
-            if os.path.isdir(file_path):
-                filelist += build_file_list(file_path)
-            else:
-                filelist.append(file_path)
-        return filelist
-
-    with open(".gitignore", "r") as f:
-        gitignore = "".join(f.readlines())
-
-    backup_dir = os.path.join(os.getcwd(), "backup", version)
-    if not os.path.exists(backup_dir) or not os.path.isdir(backup_dir):
-        os.makedirs(backup_dir)
-
-    for filepath in build_file_list(os.getcwd()):
-        backup_filepath = os.path.join(backup_dir, os.path.relpath(filepath, os.getcwd()))
-        backup_filedir = os.path.dirname(backup_filepath)
-        if not os.path.exists(backup_filedir):
-            os.makedirs(backup_filedir)
-        cmd(f"xcopy \"{filepath}\" \"{backup_filedir}\" /y")  # copy files
-
-
 def update():
-
-    # create_backup(str(datetime.datetime.now()).replace(":", ""))
-
     ans_json = get_latest_prerelease()
     update_file = None
     manifest_json_url = None
