@@ -281,6 +281,9 @@ def main():
     # customtkinter.set_default_color_theme("sw_yellow.json")
     customtkinter.ThemeManager.load_theme("sw_yellow.json")
 
+    params_string = ', '.join([f'{argname}={argval}' for argname, argval in vars(args).items()])
+    logging.info(f"Switchology Companion App {gitrev} launched with parameters {params_string}")
+
     gui = GUI()
     gui.title(f"Switchology Companion App {gitrev}")
     gui.wm_iconbitmap("res/icon.ico")
