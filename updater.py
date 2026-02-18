@@ -38,7 +38,23 @@ def request_latest():
         }
     else:
         headers = None
-    ans = requests.get(url, headers=headers)
+    try:
+        ans = requests.get(url, headers=headers)
+        ans.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"HTTP error occurred: {e}")
+        messagebox.showerror(
+            title=f"HTTP error occurred!",
+            message=f"HTTP error occurred:\n{e}"
+        )
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"A request error occurred: {e}")
+        messagebox.showerror(
+            title=f"A request error occurred!",
+            message=f"A request error occurred:\n{e}"
+        )
+        return None
     release = json.loads(ans.text)
     logging.info(f"latest version found: \"{release['tag_name']}\"")
     return release
@@ -56,7 +72,23 @@ def get_latest_prerelease():
         }
     else:
         headers = None
-    ans = requests.get(url, headers=headers)
+    try:
+        ans = requests.get(url, headers=headers)
+        ans.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"HTTP error occurred: {e}")
+        messagebox.showerror(
+            title=f"HTTP error occurred!",
+            message=f"HTTP error occurred:\n{e}"
+        )
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"A request error occurred: {e}")
+        messagebox.showerror(
+            title=f"A request error occurred!",
+            message=f"A request error occurred:\n{e}"
+        )
+        return None
     releases = json.loads(ans.text)
     releases.sort(key=lambda x: x["published_at"], reverse=True)
     for release in releases:
@@ -74,6 +106,8 @@ def get_latest_prerelease():
 def check_for_update():
     logging.debug(f"checking for update...")
     ans_json = get_latest_prerelease()
+    if ans_json is None:
+        return None
     tag_name = ans_json.get("tag_name")
     return tag_name
     latest_version = Version(tag_name)
