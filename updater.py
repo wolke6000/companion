@@ -174,13 +174,15 @@ def update():
 
     # run setup
     logging.info("running setup...")
+    setup_log_path = os.path.join(os.getcwd(), "setuplog.txt")
     subprocess.Popen(
         [
             setup_path,
             # "/VERYSILENT",
             # "/SUPPRESSMSGBOXES",
             # "/NORESTART",
-            # "/CLOSEAPPLICATIONS"
+            # "/CLOSEAPPLICATIONS",
+            f"/LOG={setup_log_path}"
         ]
     )
     logging.info("shutting down")
