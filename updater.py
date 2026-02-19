@@ -109,9 +109,7 @@ def check_for_update():
     if ans_json is None:
         return None
     tag_name = ans_json.get("tag_name")
-    return tag_name
-    latest_version = Version(tag_name)
-    logging.debug(f"latest version in online repository is \"{latest_version}\"")
+    logging.debug(f"latest version in online repository is \"{tag_name}\"")
 
     try:
         from gitrev import gitrev  # noqa
@@ -120,11 +118,16 @@ def check_for_update():
         logging.error(f"current local version could not be found (gitrev module not found), let's update")
         return tag_name  # Without gitrev file, we don't know our version. Let's update!
 
+    if gitrev == tag_name:
+        logging.debug("current local version matches latest version in online repository")
+        return None
+
     try:
+        latest_version = Version(tag_name)
         gitrev_version = Version(gitrev)
     except InvalidVersion:
+        logging.error(f"could not convert to semantic version, let's update")
         return tag_name  # gitrev version is invalid. Let's update!
-    logging.error(f"current local version is invalid, let's update")
 
     if latest_version > gitrev_version:
         logging.debug(f"latest version in online repository newer than current local version, let's update")
