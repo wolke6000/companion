@@ -11,6 +11,7 @@ from make import cmd
 from dotenv import load_dotenv
 from cryptography.hazmat.primitives import serialization
 from tkinter import messagebox
+from make import sha256_file
 
 appdata_path = os.path.join(os.getenv('APPDATA'), 'sw_app')
 
@@ -202,13 +203,26 @@ def update():
              verify_manifest(fjson.read(), fsig.read())
     except InvalidSignature:
         messagebox.showerror(
-            title=f"The signature of the downloaded setup file in invalid!",
-            message=f"The signature of the downloaded setup file in invalid!\n"
+            title=f"The signature of the downloaded setup file is invalid!",
+            message=f"The signature of the downloaded setup file is invalid!\n"
                     f"Update will be aborted"
         )
         logging.error("download signature is invalid!")
         return
     logging.info("download signature is valid!")
+
+    # verify installer
+    with open(manifest_json_path) as f:
+        manifest = json.load(f)
+    if sha256_file(setup_path) != manifest["sha256"]:
+        messagebox.showerror(
+            title=f"The downloaded setup file is invalid!",
+            message=f"The downloaded setup file is invalid!\n"
+                    f"Update will be aborted"
+        )
+        logging.error("download setup sha256 is invalid!")
+        return
+    logging.info("download setup sha256 is valid!")
 
     # run setup
     setup_log_path = os.path.join(appdata_path, "setuplog.txt")
