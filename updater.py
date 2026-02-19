@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from cryptography.hazmat.primitives import serialization
 from tkinter import messagebox
 
+appdata_path = os.path.join(os.getenv('APPDATA'), 'sw_app')
 
 def verify_manifest(manifest_bytes, signature_bytes):
     logging.debug(f"verifying manifest...")
@@ -210,8 +211,8 @@ def update():
     logging.info("download signature is valid!")
 
     # run setup
-    logging.info("running setup...")
-    setup_log_path = os.path.join(os.getcwd(), "setuplog.txt")
+    setup_log_path = os.path.join(appdata_path, "setuplog.txt")
+    logging.info(f"running setup, logging to \"{setup_log_path}\"")
     subprocess.Popen(
         [
             setup_path,

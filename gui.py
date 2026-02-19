@@ -273,10 +273,12 @@ def main():
     )
 
     if args.logfile:
-        fh = logging.FileHandler(args.logfile)
+        log_path = os.path.join(appdata_path, args.logfile)
+        fh = logging.FileHandler(log_path)
         fm = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         fh.setFormatter(fm)
         logging.getLogger().addHandler(fh)
+        logging.info(f"logging to file \"{log_path }\"")
 
     # customtkinter.set_default_color_theme("sw_yellow.json")
     customtkinter.ThemeManager.load_theme("sw_yellow.json")
