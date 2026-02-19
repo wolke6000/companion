@@ -285,7 +285,7 @@ def main():
     logging.info(f"Switchology Companion App {gitrev} launched with parameters {params_string}")
 
     gui = GUI()
-    gui.title(f"Switchology Companion App Installer Test {gitrev}")
+    gui.title(f"Switchology Companion App {gitrev}")
     gui.wm_iconbitmap("res/icon.ico")
     # gui.geometry("1000x600")
     lh = LogHandler(gui.txt_logs)
