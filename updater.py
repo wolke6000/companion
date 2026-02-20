@@ -183,13 +183,13 @@ def update():
     # download setup and manifest
     token = os.getenv('GITHUB_TOKEN')
     if token:  # with authentication token
-        logging.debug(f"downloading files without token...")
+        logging.debug(f"downloading files with token...")
         header = f"Authorization: Bearer {os.getenv('GITHUB_TOKEN')}"
         cmd(f"curl -H \"{header}\" -L \"{download_url}\" -o \"{setup_path}\"")
         cmd(f"curl -H \"{header}\" -L \"{manifest_json_url}\" -o \"{manifest_json_path}\"")
         cmd(f"curl -H \"{header}\" -L \"{manifest_sig_url}\" -o \"{manifest_sig_path}\"")
     else:  # without authentication token
-        logging.debug(f"downloading files with token...")
+        logging.debug(f"downloading files without token...")
         cmd(f"curl -L \"{download_url}\" -o \"{setup_path}\"")
         cmd(f"curl -L \"{manifest_json_url}\" -o \"{manifest_json_path}\"")
         cmd(f"curl -L \"{manifest_sig_url}\" -o \"{manifest_sig_path}\"")
