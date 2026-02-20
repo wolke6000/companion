@@ -284,10 +284,10 @@ def main():
     customtkinter.ThemeManager.load_theme("sw_yellow.json")
 
     params_string = ', '.join([f'{argname}={argval}' for argname, argval in vars(args).items()])
-    logging.info(f"Switchology Companion App {gitrev} launched with parameters {params_string}")
+    logging.info(f"Switchology Cockpit Companion {gitrev} launched with parameters {params_string}")
 
     gui = GUI()
-    gui.title(f"Switchology Companion App {gitrev}")
+    gui.title(f"Switchology Cockpit Companion {gitrev}")
     gui.wm_iconbitmap("res/icon.ico")
     # gui.geometry("1000x600")
     lh = LogHandler(gui.txt_logs)
