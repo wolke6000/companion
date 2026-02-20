@@ -144,7 +144,7 @@ def update():
     manifest_json_url = None
     manifest_sig_url = None
     for asset in ans_json['assets']:
-        if all([x in asset['name'] for x in [".exe", "Companion_Setup_"]]):
+        if asset['name'] == "Companion_Setup.exe":
             download_url = asset['browser_download_url']
             logging.debug(f"download url = \"{download_url}\"")
             update_file = os.path.basename(download_url)

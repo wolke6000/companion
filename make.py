@@ -140,7 +140,7 @@ def main():
     iscc_path = os.environ.get("ISCC_PATH")
     cmd(f"\"{iscc_path}\" installer/setup.iss /Dgitrev={gitrev} /Dsrcdir=\"{staging_path}\"")
 
-    installer_name = "Companion_Setup_" + gitrev + ".exe"
+    installer_name = "Companion_Setup.exe"
     installer_path = os.path.join(buildpath, installer_name)
 
     # create manifest.json

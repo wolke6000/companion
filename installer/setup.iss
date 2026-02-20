@@ -28,7 +28,7 @@ CloseApplications=yes
 RestartApplications=no
 
 OutputDir={#srcdir}\..
-OutputBaseFilename=Companion_Setup_{#gitrev}
+OutputBaseFilename=Companion_Setup
 
 [Files]
 Source: "{#srcdir}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion createallsubdirs
