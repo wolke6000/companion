@@ -9,7 +9,8 @@ AppName={#MyAppName}
 AppVersion={#gitrev}
 AppPublisher={#MyAppPublisher}
 
-DefaultDirName={autopf}\{#MyAppPublisher}\{#MyAppName}
+DefaultDirName={localappdata}\{#MyAppPublisher}\{#MyAppName}
+PrivilegesRequired=lowest
 
 DisableProgramGroupPage=yes
 Compression=lzma2
