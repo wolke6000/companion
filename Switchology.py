@@ -560,6 +560,38 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             logging.error(f"Failed to write to device (fmt)!")
 
 
+def verify_firmware(filepath):
+    data = None
+    with open(filepath, "rb") as f:
+        data = f.read(-1)
+
+    # check meta data
+    meta = data[-16:]
+    meta_mag = meta[:4]
+    meta_len = int.from_bytes(meta[4:8], byteorder="little")
+    meta_crc = int.from_bytes(meta[8:12], byteorder="little")
+    meta_ver = int.from_bytes(meta[12:16], byteorder="little")
+    if meta_mag != b'SWCP':  # check magic value
+        return False
+    if meta_ver != 1:  # check meta version
+        return False
+    if meta_len & 0x3 != 0:  # check length
+        return False
+
+    # check file crc
+    crc = 0xFFFFFFFF
+    for i in range(0, meta_len, 4):
+        word = int.from_bytes(data[i:i+4], byteorder="little")
+        crc ^= word
+        for _ in range(32):
+            if crc & 0x80000000:
+                crc = ((crc << 1) & 0xFFFFFFFF) ^ 0x04C11DB7
+            else:
+                crc = (crc << 1) & 0xFFFFFFFF
+    crc &= 0xFFFFFFFF
+
+    return crc == meta_crc
+
 
 class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
 
@@ -654,6 +686,20 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                 device_list_frame.refresh()
                 if device_hash in device_list_frame.devices.keys():
                     device_list_frame.select(device_hash)
+
+        logging.info("Verifying firmware file integrity...")
+        self.lbl_info.configure(text="Verifying firmware file integrity...")
+        if verify_firmware(self.firmwarepath.get()):
+            logging.info("Firmware file integrity intact")
+        else:
+            logging.error("Firmware file integrity compromised!")
+            self.lbl_info.configure(text="firmware file integrity compromised!")
+            messagebox.showerror(
+                title="Firmware update failed!",
+                message=f"The integrity of the firmware file could not be verified.\n"
+                        f"Please retry!"
+            )
+            return
 
         logging.info("updating firmware on device...")
         device_hash = self.device.hash
