@@ -711,10 +711,37 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         path_to_dfuutil = os.path.join("dfu-util", "dfu-util.exe")
 
         logging.debug(f"running dfutil...")
+
+        logging.debug(f"dfutil list devices...")
+        self.updateproc = subprocess.Popen(
+            [path_to_dfuutil, "-l"],
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE
+        )
+        listout = self.updateproc.stdout.read().decode()
+        logging.debug(listout)
+        vidpid = None
+        for vp in ["0483:a4f5", "1209:db42"]:
+            if vp in listout:
+                vidpid = vp
+                break
+        if vidpid is None:
+            logging.error(f"did not find any matching DFU device")
+            self.lbl_info.configure(text=f"Failed!")
+            messagebox.showerror(
+                title="Firmware update failed!",
+                message=f"The firmware update failed!"
+                        f"No matching DFU device was found!"
+                        f"Your device should still be on the old version."
+                        f"Please disconnect and reconnect the device!"
+            )
+            return
+
+        logging.debug(f"dfutil updating {vidpid}...")
         dfuargs = [
             path_to_dfuutil,
             "-D", self.firmwarepath.get(),
-            "-d" "0483:*,1209:db42",
+            "-d", vidpid,
         ]
         self.updateproc = subprocess.Popen(
             dfuargs,
