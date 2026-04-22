@@ -898,6 +898,34 @@ class SwitchologyDevice(Device):
 
 
     def send_command(self, command):
+
+        # basic check if firmware supports the command
+        if command != "gfw":
+            cmd_ver = {
+                "gfw": semantic_version.Version("0.2.0"),
+                "ghw": semantic_version.Version("0.2.0"),
+                "gbi": semantic_version.Version("0.2.0"),
+                "sbm": semantic_version.Version("0.2.0"),
+                "gbm": semantic_version.Version("0.2.0"),
+                "rst": semantic_version.Version("0.2.0"),
+                "fmt": semantic_version.Version("0.2.0"),
+                "btl": semantic_version.Version("0.3.0"),
+                "gup": semantic_version.Version("0.3.1"),
+                "sup": semantic_version.Version("0.3.1"),
+                "sbf": semantic_version.Version("0.4.0"),
+                "gbf": semantic_version.Version("0.4.0"),
+                "sem": semantic_version.Version("0.4.4"),
+                "gem": semantic_version.Version("0.4.4"),
+                "sdl": semantic_version.Version("0.5.0"),
+                "gdl": semantic_version.Version("0.5.0"),
+                "eol": semantic_version.Version("1.0.0"),
+                "gjs": semantic_version.Version("1.2.0"),
+                "sjs": semantic_version.Version("1.2.0"),
+            }
+            if cmd_ver[command] > semantic_version.Version(self.fwver.replace("v", "")):
+                logging.debug(f"Command \"{command}\" is not supported by firmware {self.fwver}")
+                return
+
         self.open_comport()
         logging.debug(f"sending command \"{command}\"")
         self.serial_itf.write(f"{command}\r\n".encode('ascii'))
