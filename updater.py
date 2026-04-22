@@ -107,7 +107,7 @@ def get_latest_prerelease():
 
 def check_for_update():
     logging.debug(f"checking for update...")
-    ans_json = get_latest_prerelease()
+    ans_json = request_latest()
     if ans_json is None:
         return None
     tag_name = ans_json.get("tag_name")
@@ -139,7 +139,7 @@ def check_for_update():
 
 
 def update():
-    ans_json = get_latest_prerelease()
+    ans_json = request_latest()
     update_file = None
     manifest_json_url = None
     manifest_sig_url = None
