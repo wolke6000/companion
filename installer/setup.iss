@@ -36,10 +36,12 @@ Source: "{#srcdir}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion cre
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop icon"; Flags: unchecked
+Name: "desktopicondebug"; Description: "Create a &desktop icon for debug mode"; Flags: unchecked
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{cmd}"; Parameters: "/c ""{app}\Companion App.cmd"""; WorkingDir: "{app}"; IconFilename: "{app}\res\icon.ico"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{cmd}"; Parameters: "/c ""{app}\Companion App.cmd"""; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\res\icon.ico"
+Name: "{autodesktop}\{#MyAppName} Debug Mode"; Filename: "{cmd}"; Parameters: "/c ""{app}\Companion App Debug Mode.cmd"""; WorkingDir: "{app}"; Tasks: desktopicondebug; IconFilename: "{app}\res\icon.ico"
 
 [Run]
 Filename: "{app}\Readme.md"; Description: "View the README file"; Flags: postinstall shellexec skipifsilent unchecked
