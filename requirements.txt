@@ -19,3 +19,4 @@ idna~=3.10
 charset-normalizer~=3.4.0
 darkdetect~=0.8.0
 semantic-version~=2.10.0
+cryptography~=46.0.5

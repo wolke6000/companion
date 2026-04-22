@@ -105,11 +105,6 @@ class GUI(customtkinter.CTk):
             )
             if ans == "yes":
                 update()
-                messagebox.showinfo(
-                    title="Update complete!",
-                    message=f"The update to \"{latest_version}\" is complete. The programm will now restart!"
-                )
-                os.execl(sys.executable, os.path.abspath(__file__), *sys.argv)
 
         self.device_list_frame = None
 
@@ -278,16 +273,22 @@ def main():
     )
 
     if args.logfile:
-        fh = logging.FileHandler(args.logfile)
+        log_path = os.path.join(appdata_path, args.logfile)
+        fh = logging.FileHandler(log_path)
         fm = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         fh.setFormatter(fm)
         logging.getLogger().addHandler(fh)
+        logging.info(f"logging to file \"{log_path }\"")
 
     # customtkinter.set_default_color_theme("sw_yellow.json")
     customtkinter.ThemeManager.load_theme("sw_yellow.json")
 
+    params_string = ', '.join([f'{argname}={argval}' for argname, argval in vars(args).items()])
+    logging.info(f"Switchology Cockpit Companion {gitrev} launched with parameters {params_string}")
+
     gui = GUI()
-    gui.title(f"Switchology Companion App {gitrev}")
+    gui.title(f"Switchology Cockpit Companion {gitrev}")
+    gui.wm_iconbitmap("res/icon.ico")
     # gui.geometry("1000x600")
     lh = LogHandler(gui.txt_logs)
     logging.getLogger().addHandler(lh)

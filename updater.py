@@ -1,14 +1,34 @@
-import datetime
 import os
-from tempfile import TemporaryDirectory
+import subprocess
+import sys
+from pathlib import Path
 import requests
 import json
+import logging
+from cryptography.exceptions import InvalidSignature
 from packaging.version import Version, InvalidVersion
 from make import cmd
 from dotenv import load_dotenv
+from cryptography.hazmat.primitives import serialization
+from tkinter import messagebox
+from make import sha256_file
 
+appdata_path = os.path.join(os.getenv('APPDATA'), 'sw_app')
+
+def verify_manifest(manifest_bytes, signature_bytes):
+    logging.debug(f"verifying manifest...")
+    public_key = serialization.load_pem_public_key(
+        b"""
+    -----BEGIN PUBLIC KEY-----
+    MCowBQYDK2VwAyEAbXhZyz71RvNnZl8qSzkv8uxCQx57f3RHHz6qmHWQfv8=
+    -----END PUBLIC KEY-----
+        """
+    )
+    public_key.verify(signature_bytes, manifest_bytes)
+    logging.info(f"manifest verified")
 
 def request_latest():
+    logging.debug(f"requesting latest version...")
     load_dotenv()
     owner = "wolke6000"
     repo = "companion"
@@ -20,95 +40,205 @@ def request_latest():
         }
     else:
         headers = None
-    ans = requests.get(url, headers=headers)
+    try:
+        ans = requests.get(url, headers=headers)
+        ans.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"HTTP error occurred: {e}")
+        messagebox.showerror(
+            title=f"HTTP error occurred!",
+            message=f"HTTP error occurred:\n{e}"
+        )
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"A request error occurred: {e}")
+        messagebox.showerror(
+            title=f"A request error occurred!",
+            message=f"A request error occurred:\n{e}"
+        )
+        return None
+    release = json.loads(ans.text)
+    logging.info(f"latest version found: \"{release['tag_name']}\"")
+    return release
 
-    return json.loads(ans.text)
+def get_latest_prerelease():
+    logging.debug(f"requesting latest version...")
+    load_dotenv()
+    owner = "wolke6000"
+    repo = "companion"
+    url = f"https://api.github.com/repos/{owner}/{repo}/releases"
+    token = os.getenv('GITHUB_TOKEN')
+    if token:
+        headers = {
+            "Authorization": f"Bearer {os.getenv('GITHUB_TOKEN')}"
+        }
+    else:
+        headers = None
+    try:
+        ans = requests.get(url, headers=headers)
+        ans.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"HTTP error occurred: {e}")
+        messagebox.showerror(
+            title=f"HTTP error occurred!",
+            message=f"HTTP error occurred:\n{e}"
+        )
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"A request error occurred: {e}")
+        messagebox.showerror(
+            title=f"A request error occurred!",
+            message=f"A request error occurred:\n{e}"
+        )
+        return None
+    releases = json.loads(ans.text)
+    releases.sort(key=lambda x: x["published_at"], reverse=True)
+    for release in releases:
+        if release["prerelease"]:
+            logging.info(f"latest firmware found: \"{release['tag_name']}\"")
+            return release
+    logging.error(f"no latest firmware found!")
+    messagebox.showerror(
+        title="No latest version found!",
+        message="Could not request latest version from online repository!"
+    )
+    return None
 
 
 def check_for_update():
-    ans_json = request_latest()
+    logging.debug(f"checking for update...")
+    ans_json = get_latest_prerelease()
+    if ans_json is None:
+        return None
     tag_name = ans_json.get("tag_name")
-    latest_version = Version(tag_name)
+    logging.debug(f"latest version in online repository is \"{tag_name}\"")
 
     try:
         from gitrev import gitrev  # noqa
+        logging.debug(f"current local version is \"{gitrev}\"")
     except ModuleNotFoundError:
+        logging.error(f"current local version could not be found (gitrev module not found), let's update")
         return tag_name  # Without gitrev file, we don't know our version. Let's update!
 
+    if gitrev == tag_name:
+        logging.debug("current local version matches latest version in online repository")
+        return None
+
     try:
+        latest_version = Version(tag_name)
         gitrev_version = Version(gitrev)
     except InvalidVersion:
+        logging.error(f"could not convert to semantic version, let's update")
         return tag_name  # gitrev version is invalid. Let's update!
 
     if latest_version > gitrev_version:
+        logging.debug(f"latest version in online repository newer than current local version, let's update")
         return tag_name
     else:
         return None
 
 
-def create_backup(version):
-
-    def build_file_list(directory):
-        filelist = list()
-        for file in os.listdir(directory):
-            if file in gitignore and file not in ["gitrev.py", "res"]:
-                continue
-            file_path = os.path.join(directory, file)
-            if "backup" in file_path:
-                continue  # don't backup backups
-            if os.path.isdir(file_path):
-                filelist += build_file_list(file_path)
-            else:
-                filelist.append(file_path)
-        return filelist
-
-    with open(".gitignore", "r") as f:
-        gitignore = "".join(f.readlines())
-
-    backup_dir = os.path.join(os.getcwd(), "backup", version)
-    if not os.path.exists(backup_dir) or not os.path.isdir(backup_dir):
-        os.makedirs(backup_dir)
-
-    for filepath in build_file_list(os.getcwd()):
-        backup_filepath = os.path.join(backup_dir, os.path.relpath(filepath, os.getcwd()))
-        backup_filedir = os.path.dirname(backup_filepath)
-        if not os.path.exists(backup_filedir):
-            os.makedirs(backup_filedir)
-        cmd(f"xcopy \"{filepath}\" \"{backup_filedir}\" /y")  # copy files
-
-
 def update():
+    ans_json = get_latest_prerelease()
+    update_file = None
+    manifest_json_url = None
+    manifest_sig_url = None
+    for asset in ans_json['assets']:
+        if asset['name'] == "Companion_Setup.exe":
+            download_url = asset['browser_download_url']
+            logging.debug(f"download url = \"{download_url}\"")
+            update_file = os.path.basename(download_url)
+        elif asset['name'] == "manifest.json":
+            manifest_json_url =  asset['browser_download_url']
+            logging.debug(f"manifest json url = \"{manifest_json_url}\"")
+        elif asset['name'] == "manifest.sig":
+            manifest_sig_url = asset['browser_download_url']
+            logging.debug(f"manifest sig url = \"{manifest_sig_url}\"")
 
-    # create_backup(str(datetime.datetime.now()).replace(":", ""))
+    files_not_found_in_assets = list()
+    if update_file is None:
+        files_not_found_in_assets.append("Companion Setup file")
+        logging.error(f"Companion Setup file not found in release assets")
+    if manifest_json_url is None:
+        files_not_found_in_assets.append("manifest.json")
+        logging.error(f"\"manifest.json\" not found in release assets")
+    if manifest_sig_url is None:
+        files_not_found_in_assets.append("manifest.sig")
+        logging.error(f"\"manifest.sig\" not found in release assets")
+    if len(files_not_found_in_assets) > 0:
+        messagebox.showerror(
+            title=f"Some assets for the release are not available for download!",
+            message=f"The following assets are not available for download in the release\n"
+                    f"{', '.join(files_not_found_in_assets)}\n"
+                    f"Update will be aborted"
+        )
+        return
 
-    ans_json = request_latest()
-    zipball_url = ans_json.get('zipball_url')
-    with TemporaryDirectory() as temp_dir:
-        update_file = f"{temp_dir}\\update.zip"
-        update_dir = os.path.join(temp_dir, "update")
-        os.mkdir(update_dir)
+    update_dir = Path(os.environ["LOCALAPPDATA"]) / "Switchology" / "Updater"
+    update_dir.mkdir(parents=True, exist_ok=True)
+    setup_path = update_dir / update_file
+    manifest_json_path = update_dir / 'manifest.json'
+    manifest_sig_path = update_dir / 'manifest.sig'
 
-        # download archive
-        token = os.getenv('GITHUB_TOKEN')
-        if token:
-            header = f"Authorization: Bearer {os.getenv('GITHUB_TOKEN')}"
-            cmd(f"curl -H \"{header}\" -L \"{zipball_url}\" -o \"{update_file}\"")  # with authentication token
-        else:
-            cmd(f"curl -L \"{zipball_url}\" -o \"{update_file}\"")  # without authentication token
+    # download setup and manifest
+    token = os.getenv('GITHUB_TOKEN')
+    if token:  # with authentication token
+        logging.debug(f"downloading files with token...")
+        header = f"Authorization: Bearer {os.getenv('GITHUB_TOKEN')}"
+        cmd(f"curl -H \"{header}\" -L \"{download_url}\" -o \"{setup_path}\"")
+        cmd(f"curl -H \"{header}\" -L \"{manifest_json_url}\" -o \"{manifest_json_path}\"")
+        cmd(f"curl -H \"{header}\" -L \"{manifest_sig_url}\" -o \"{manifest_sig_path}\"")
+    else:  # without authentication token
+        logging.debug(f"downloading files without token...")
+        cmd(f"curl -L \"{download_url}\" -o \"{setup_path}\"")
+        cmd(f"curl -L \"{manifest_json_url}\" -o \"{manifest_json_path}\"")
+        cmd(f"curl -L \"{manifest_sig_url}\" -o \"{manifest_sig_path}\"")
+    logging.info(f"update files downloaded!")
 
-        cmd(f"tar -xf \"{update_file}\" -C \"{update_dir}\"")  # unpack archive
+    # verify signature, throws exception if the signature isn't valid:
+    logging.debug("verifying download signature")
+    # https://cryptography.io/en/latest/hazmat/primitives/asymmetric/dsa/#verification
+    try:
+        with open(manifest_json_path, "rb") as fjson, open(manifest_sig_path, "rb") as fsig:
+             verify_manifest(fjson.read(), fsig.read())
+    except InvalidSignature:
+        messagebox.showerror(
+            title=f"The signature of the downloaded setup file is invalid!",
+            message=f"The signature of the downloaded setup file is invalid!\n"
+                    f"Update will be aborted"
+        )
+        logging.error("download signature is invalid!")
+        return
+    logging.info("download signature is valid!")
 
-        directory = None
-        for d in os.listdir(update_dir):
-            directory = os.path.join(update_dir, d)
-            if os.path.isdir(directory):
-                break
+    # verify installer
+    with open(manifest_json_path) as f:
+        manifest = json.load(f)
+    if sha256_file(setup_path) != manifest["sha256"]:
+        messagebox.showerror(
+            title=f"The downloaded setup file is invalid!",
+            message=f"The downloaded setup file is invalid!\n"
+                    f"Update will be aborted"
+        )
+        logging.error("download setup sha256 is invalid!")
+        return
+    logging.info("download setup sha256 is valid!")
 
-        cmd(f"xcopy \"{directory}\" \"{os.getcwd()}\" /s /y")  # copy files
-
-    # write girev
-    with open("gitrev.py", 'w') as f:
-        f.write(f"gitrev = \"{ans_json.get('tag_name')}\"\n")
+    # run setup
+    setup_log_path = os.path.join(appdata_path, "setuplog.txt")
+    logging.info(f"running setup, logging to \"{setup_log_path}\"")
+    subprocess.Popen(
+        [
+            setup_path,
+            # "/VERYSILENT",
+            # "/SUPPRESSMSGBOXES",
+            # "/NORESTART",
+            # "/CLOSEAPPLICATIONS",
+            f"/LOG={setup_log_path}"
+        ]
+    )
+    logging.info("shutting down")
+    sys.exit(0)
 
 
 def main():
