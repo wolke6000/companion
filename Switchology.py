@@ -922,9 +922,11 @@ class SwitchologyDevice(Device):
                 "gjs": semantic_version.Version("1.2.0"),
                 "sjs": semantic_version.Version("1.2.0"),
             }
-            if cmd_ver[command] > semantic_version.Version(self.fwver.replace("v", "")):
-                logging.debug(f"Command \"{command}\" is not supported by firmware {self.fwver}")
-                return
+            ver = cmd_ver.get(command.split(" ")[0])
+            if ver is not None:
+                if ver > semantic_version.Version(self.fwver.replace("v", "")):
+                    logging.debug(f"Command \"{command}\" is not supported by firmware {self.fwver}")
+                    return
 
         self.open_comport()
         logging.debug(f"sending command \"{command}\"")
