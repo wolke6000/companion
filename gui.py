@@ -50,7 +50,8 @@ def get_devices():
             f"\tVID: \"0x{device_info.vid:04X}\"\n" \
             f"\tPID: \"0x{device_info.pid:04X}\"\n" \
             f"\tUsagePage: \"0x{device_info.usage_page:04X}\"\n" \
-            f"\tUsage: \"0x{device_info.usage:04X}\"\n"
+            f"\tUsage: \"0x{device_info.usage:04X}\"\n" \
+            f"\tis Switchology: {device_info.is_switchology}"
 
         try:
             comport = swinput.get_com_port(device_info.device_hash)
@@ -58,7 +59,10 @@ def get_devices():
         except RuntimeError as e:
             pass  # no COM port found
         logging.debug(description_string)
-        temp_device_class = device_classes.get((device_info.vid, device_info.pid), Device)
+        if device_info.is_switchology:
+            temp_device_class = SwitchologyDevice
+        else:
+            temp_device_class = device_classes.get((device_info.vid, device_info.pid), Device)
         if temp_device_class != SwitchologyDevice:
             continue
         devices[device_info.device_hash] = temp_device_class(device_info)

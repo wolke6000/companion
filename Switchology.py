@@ -398,6 +398,9 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.var_jsdz = StringVar(value="")
         self.var_jssa = StringVar(value="")
 
+        self.var_avid = StringVar(value="")
+        self.var_apid = StringVar(value="")
+
         self.lbl_fwve = customtkinter.CTkLabel(self, text='Firmware Version')
         self.lbl_fwve.grid(row=0, column=0, sticky="w")
         self.ent_fwve = customtkinter.CTkEntry(self, state='disabled', textvariable=self.var_fwve)
@@ -449,6 +452,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.ent_blfc.grid(row=7, column=1)
 
         frm_elmo = customtkinter.CTkFrame(self)
+        frm_elmo.columnconfigure(0, weight=1)
+        frm_elmo.columnconfigure(1, weight=3)
         lbl_elmo = customtkinter.CTkLabel(frm_elmo, text="Module settings")
         lbl_elmo.grid(row=0, column=0, columnspan=2, sticky="ew")
 
@@ -460,7 +465,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             command=self.module_mode_8way_update,
             state="readonly",
         )
-        self.cbx_8wmd.grid(row=1, column=1, padx=2, sticky="ew")
+        self.cbx_8wmd.grid(row=1, column=1, padx=2, sticky="e")
 
         self.lbl_tgmd = customtkinter.CTkLabel(frm_elmo, text="Toggle Mode", padx=2, pady=2)
         self.lbl_tgmd.grid(row=2, column=0, padx=2, sticky="w")
@@ -470,7 +475,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             command=self.module_mode_toggle_update,
             state="readonly",
         )
-        self.cbx_tgmd.grid(row=2, column=1, padx=2, sticky="ew")
+        self.cbx_tgmd.grid(row=2, column=1, padx=2, sticky="e")
 
         self.lbl_rsmd = customtkinter.CTkLabel(frm_elmo, text="Rotary Selector Mode", padx=2, pady=2)
         self.lbl_rsmd.grid(row=3, column=0, padx=2, sticky="w")
@@ -480,24 +485,65 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             command=self.module_mode_rotabs_update,
             state="readonly",
         )
-        self.cbx_rsmd.grid(row=3, column=1, padx=2, sticky="ew")
+        self.cbx_rsmd.grid(row=3, column=1, padx=2, sticky="e")
 
         self.lbl_jsdz = customtkinter.CTkLabel(frm_elmo, text="Joystick Deadzone", padx=2, pady=2)
         self.lbl_jsdz.grid(row=4, column=0, padx=2, sticky="w")
         self.ent_jsdz = customtkinter.CTkEntry(frm_elmo, textvariable=self.var_jsdz)
-        self.ent_jsdz.grid(row=4, column=1)
+        self.ent_jsdz.grid(row=4, column=1, padx=2, sticky="e")
 
         self.lbl_jsdz = customtkinter.CTkLabel(frm_elmo, text="Joystick Saturation", padx=2, pady=2)
         self.lbl_jsdz.grid(row=5, column=0, padx=2, sticky="w")
         self.ent_jsdz = customtkinter.CTkEntry(frm_elmo, textvariable=self.var_jssa)
-        self.ent_jsdz.grid(row=5, column=1)
+        self.ent_jsdz.grid(row=5, column=1, padx=2, sticky="e")
 
         frm_elmo.grid(row=8, column=0, columnspan=2, sticky="ew")
 
+        # advanced settings
+        self.var_adva = tkinter.BooleanVar(value=False)
+        chk_adva = customtkinter.CTkCheckBox(self, text="Show advanced settings", variable=self.var_adva, command=self.show_hide_advanced_settings)
+        chk_adva.grid(row=9, column=0, columnspan=2, sticky="ew")
+        self.frm_adva = None
+
         self.btn_write = customtkinter.CTkButton(self, text="Write and Restart", command=self.write_all)
-        self.btn_write.grid(row=9, column=0)
+        self.btn_write.grid(row=11, column=0)
         self.btn_reset = customtkinter.CTkButton(self, text="Factory Reset and Restart", command=self.factory_reset, fg_color="red", text_color="white")
-        self.btn_reset.grid(row=9, column=1)
+        self.btn_reset.grid(row=11, column=1)
+
+    def show_hide_advanced_settings(self):
+        if self.var_adva.get():
+            if tkinter.messagebox.askyesno(
+                    title="Show advanced settings",
+                    message="Changing the USB Vendor ID (VID) and Product ID (PID) will change how games and other "
+                            "applications identify this device. Existing game bindings, controller mappings, and "
+                            "per-device settings associated with the current VID/PID may stop working and may need to "
+                            "be configured again. The companion software will still be able to detect and manage the "
+                            "device. However, invalid or conflicting VID/PID values may cause driver, compatibility, "
+                            "or device detection issues in other software or operating systems.\n"
+                            "These settings are intended for advanced users only.\n"
+                            "Continue?"
+            ):
+                self.frm_adva = customtkinter.CTkFrame(self)
+                self.frm_adva.columnconfigure(0, weight=1)
+                self.frm_adva.columnconfigure(1, weight=3)
+                self.frm_adva.grid(row=10, column=0, columnspan=2, sticky="ew")
+
+                self.lbl_avid = customtkinter.CTkLabel(self.frm_adva, text="Vendor Id (VID)", padx=2, pady=2)
+                self.lbl_avid.grid(row=0, column=0, padx=2, sticky="w")
+                self.ent_avid = customtkinter.CTkEntry(self.frm_adva, textvariable=self.var_avid)
+                self.ent_avid.grid(row=0, column=1, padx=2, sticky="e")
+
+                self.lbl_apid = customtkinter.CTkLabel(self.frm_adva, text="Product Id (PID)", padx=2, pady=2)
+                self.lbl_apid.grid(row=1, column=0, padx=2, sticky="w")
+                self.ent_apid = customtkinter.CTkEntry(self.frm_adva, textvariable=self.var_apid)
+                self.ent_apid.grid(row=1, column=1, padx=2, sticky="e")
+                self.refresh(self.device)
+            else:
+                self.var_adva.set(False)
+                if self.frm_adva is not None:
+                    self.frm_adva.destroy()
+        else:
+            self.frm_adva.destroy()
 
     def refresh(self, device):
         self.device = device
@@ -509,6 +555,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.var_blfc.set(device.backlight_factor)
         self.var_jsdz.set(device.joystick_deadzone)
         self.var_jssa.set(device.joystick_saturation)
+        self.var_avid.set(hex(device.vid))
+        self.var_apid.set(hex(device.pid))
 
         self.module_modes = device.module_mode
         if self.module_modes & 0x01:
@@ -532,13 +580,17 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.var_mode2.set(self.mode2s[mode2])
 
     def write_all(self):
-        for command in [
+        commands = [
             f'sbm {self.var_mode.get()}',
             f'sup {hex(int(self.var_udpe.get()))}',
             f'sbf {hex(int(self.var_blfc.get()))}',
             f'sem {hex(self.module_modes)}',
             f'sjs {hex(int(self.var_jsdz.get())<<8 | int(self.var_jssa.get()))}',
-        ]:
+        ]
+        if self.var_adva.get():
+            commands.append(f'svd {self.var_avid.get()}')
+            commands.append(f'spd {self.var_apid.get()}')
+        for command in commands:
             ans = self.device.send_command(command)
             if "ok" in ans.lower():
                 logging.info(f"Successful write to device ({command})")
@@ -825,11 +877,6 @@ class SwitchologyDevice(Device):
         self._joystick_settings = None
         self.serial_itf = None
         self.port = None
-        if not (self.vid, self.pid) in [
-            (0x0483, 0xA4F5),  # VID & PID assigned to Switchology MCP (starting with firmare v0.4.0)
-            (0x0483, 54321),  # compatibility with arbitrary VID and PID for older firmware prior v0.4.0
-        ]:
-            raise NotSwitchologyDeviceError
 
     def __del__(self):
         super().__del__()
@@ -924,7 +971,7 @@ class SwitchologyDevice(Device):
             }
             ver = cmd_ver.get(command.split(" ")[0])
             if ver is not None:
-                if ver > semantic_version.Version(self.fwver.replace("v", "")):
+                if ver > semantic_version.Version(self.fwver.replace("v", "").replace("-","+",1)):
                     logging.debug(f"Command \"{command}\" is not supported by firmware {self.fwver}")
                     return
 

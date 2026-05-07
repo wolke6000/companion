@@ -44,7 +44,8 @@ class SWINPUT_DeviceInfo(Structure):
         ("button_count", c_uint16),
         ("axes_present", c_uint16),
         ("axes_logical_min", c_int32 * 16),
-        ("axes_logical_max", c_int32 * 16)
+        ("axes_logical_max", c_int32 * 16),
+        ("is_switchology", c_uint8)
     ]
 
 class SWINPUT_DecodedReport(Structure):
