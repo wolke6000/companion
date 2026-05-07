@@ -449,6 +449,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.ent_blfc.grid(row=7, column=1)
 
         frm_elmo = customtkinter.CTkFrame(self)
+        frm_elmo.columnconfigure(0, weight=1)
+        frm_elmo.columnconfigure(1, weight=3)
         lbl_elmo = customtkinter.CTkLabel(frm_elmo, text="Module settings")
         lbl_elmo.grid(row=0, column=0, columnspan=2, sticky="ew")
 
@@ -460,7 +462,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             command=self.module_mode_8way_update,
             state="readonly",
         )
-        self.cbx_8wmd.grid(row=1, column=1, padx=2, sticky="ew")
+        self.cbx_8wmd.grid(row=1, column=1, padx=2, sticky="e")
 
         self.lbl_tgmd = customtkinter.CTkLabel(frm_elmo, text="Toggle Mode", padx=2, pady=2)
         self.lbl_tgmd.grid(row=2, column=0, padx=2, sticky="w")
@@ -470,7 +472,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             command=self.module_mode_toggle_update,
             state="readonly",
         )
-        self.cbx_tgmd.grid(row=2, column=1, padx=2, sticky="ew")
+        self.cbx_tgmd.grid(row=2, column=1, padx=2, sticky="e")
 
         self.lbl_rsmd = customtkinter.CTkLabel(frm_elmo, text="Rotary Selector Mode", padx=2, pady=2)
         self.lbl_rsmd.grid(row=3, column=0, padx=2, sticky="w")
@@ -480,17 +482,17 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             command=self.module_mode_rotabs_update,
             state="readonly",
         )
-        self.cbx_rsmd.grid(row=3, column=1, padx=2, sticky="ew")
+        self.cbx_rsmd.grid(row=3, column=1, padx=2, sticky="e")
 
         self.lbl_jsdz = customtkinter.CTkLabel(frm_elmo, text="Joystick Deadzone", padx=2, pady=2)
         self.lbl_jsdz.grid(row=4, column=0, padx=2, sticky="w")
         self.ent_jsdz = customtkinter.CTkEntry(frm_elmo, textvariable=self.var_jsdz)
-        self.ent_jsdz.grid(row=4, column=1)
+        self.ent_jsdz.grid(row=4, column=1, padx=2, sticky="e")
 
         self.lbl_jsdz = customtkinter.CTkLabel(frm_elmo, text="Joystick Saturation", padx=2, pady=2)
         self.lbl_jsdz.grid(row=5, column=0, padx=2, sticky="w")
         self.ent_jsdz = customtkinter.CTkEntry(frm_elmo, textvariable=self.var_jssa)
-        self.ent_jsdz.grid(row=5, column=1)
+        self.ent_jsdz.grid(row=5, column=1, padx=2, sticky="e")
 
         frm_elmo.grid(row=8, column=0, columnspan=2, sticky="ew")
 
