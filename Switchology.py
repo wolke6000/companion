@@ -825,11 +825,6 @@ class SwitchologyDevice(Device):
         self._joystick_settings = None
         self.serial_itf = None
         self.port = None
-        if not (self.vid, self.pid) in [
-            (0x0483, 0xA4F5),  # VID & PID assigned to Switchology MCP (starting with firmare v0.4.0)
-            (0x0483, 54321),  # compatibility with arbitrary VID and PID for older firmware prior v0.4.0
-        ]:
-            raise NotSwitchologyDeviceError
 
     def __del__(self):
         super().__del__()
