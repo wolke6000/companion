@@ -511,6 +511,14 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.btn_reset.grid(row=11, column=1)
 
     def show_hide_advanced_settings(self):
+        def validate(value):
+            try:
+                if int(value, 16) > 0xFFFF:
+                    return False
+            except ValueError:
+                return False
+            return True
+
         if self.var_adva.get():
             if tkinter.messagebox.askyesno(
                     title="Show advanced settings",
@@ -528,14 +536,26 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
                 self.frm_adva.columnconfigure(1, weight=3)
                 self.frm_adva.grid(row=10, column=0, columnspan=2, sticky="ew")
 
+                vcmd = (self.register(validate), '%P')
+
                 self.lbl_avid = customtkinter.CTkLabel(self.frm_adva, text="Vendor Id (VID)", padx=2, pady=2)
                 self.lbl_avid.grid(row=0, column=0, padx=2, sticky="w")
-                self.ent_avid = customtkinter.CTkEntry(self.frm_adva, textvariable=self.var_avid)
+                self.ent_avid = customtkinter.CTkEntry(
+                    self.frm_adva,
+                    textvariable=self.var_avid,
+                    validate='key',
+                    validatecommand=vcmd,
+                )
                 self.ent_avid.grid(row=0, column=1, padx=2, sticky="e")
 
                 self.lbl_apid = customtkinter.CTkLabel(self.frm_adva, text="Product Id (PID)", padx=2, pady=2)
                 self.lbl_apid.grid(row=1, column=0, padx=2, sticky="w")
-                self.ent_apid = customtkinter.CTkEntry(self.frm_adva, textvariable=self.var_apid)
+                self.ent_apid = customtkinter.CTkEntry(
+                    self.frm_adva,
+                    textvariable=self.var_apid,
+                    validate='key',
+                    validatecommand=vcmd,
+                )
                 self.ent_apid.grid(row=1, column=1, padx=2, sticky="e")
                 self.refresh(self.device)
             else:
