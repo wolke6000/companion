@@ -13,7 +13,7 @@ from tempfile import TemporaryDirectory
 
 from serial.serialutil import SerialException
 
-from Device import Device, DeviceViewFrame, device_classes
+from Device import Device, DeviceViewFrame, device_classes, DfuDevice
 import serial
 from serial.tools.list_ports import comports
 import logging
@@ -32,6 +32,37 @@ class NotSwitchologyDeviceError(TypeError):
 class NoSerialNumberError(Exception):
     pass
 
+
+path_to_dfuutil = os.path.join("dfu-util", "dfu-util.exe")
+
+
+def dfu_util_list_devices():
+    logging.debug(f"dfutil list devices...")
+    updateproc = subprocess.Popen(
+        [path_to_dfuutil, "-l"],
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE
+    )
+    listout = updateproc.stdout.read().decode()
+    logging.debug(listout)
+    for vp in ["0483:a4f5", "1209:db42"]:
+        if vp in listout:
+            yield vp
+
+def dfu_util_update(firmwarepath, vidpid):
+    logging.debug(f"dfutil updating {vidpid}...")
+    dfuargs = [
+        path_to_dfuutil,
+        "-D", firmwarepath,
+        "-d", vidpid,
+    ]
+    updateproc = subprocess.Popen(
+        dfuargs,
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE
+    )
+    for c in iter(lambda: updateproc.stdout.read(1), b""):
+        yield c
 
 class SwitchologyDeviceViewFrame(DeviceViewFrame):
 
@@ -774,65 +805,45 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
             return
 
         logging.info("updating firmware on device...")
-        device_hash = self.device.hash
-        self.device.send_command("btl")  # switch to bootloader
-        time.sleep(0.1)
-        self.device.reset()  # reset
-        time.sleep(1)
-
-        path_to_dfuutil = os.path.join("dfu-util", "dfu-util.exe")
+        if isinstance(self.device, SwitchologyDevice):
+            device_hash = self.device.hash
+            self.device.send_command("btl")  # switch to bootloader
+            time.sleep(0.1)
+            self.device.reset()  # reset
+            time.sleep(1)
+            try:
+                vidpid = list(dfu_util_list_devices())[0]
+            except IndexError:
+                logging.error(f"did not find any matching DFU device")
+                self.lbl_info.configure(text=f"Failed!")
+                messagebox.showerror(
+                    title="Firmware update failed!",
+                    message=f"The firmware update failed!"
+                            f"No matching DFU device was found!"
+                            f"Your device should still be on the old version."
+                            f"Please disconnect and reconnect the device!"
+                )
+                return
+        elif isinstance(self.device, DfuDevice):
+            vidpid = self.device.vidpid
+        else:
+            raise TypeError("Unexpected Device Type!")
 
         logging.debug(f"running dfutil...")
 
-        logging.debug(f"dfutil list devices...")
-        self.updateproc = subprocess.Popen(
-            [path_to_dfuutil, "-l"],
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE
-        )
-        listout = self.updateproc.stdout.read().decode()
-        logging.debug(listout)
-        vidpid = None
-        for vp in ["0483:a4f5", "1209:db42"]:
-            if vp in listout:
-                vidpid = vp
-                break
-        if vidpid is None:
-            logging.error(f"did not find any matching DFU device")
-            self.lbl_info.configure(text=f"Failed!")
-            messagebox.showerror(
-                title="Firmware update failed!",
-                message=f"The firmware update failed!"
-                        f"No matching DFU device was found!"
-                        f"Your device should still be on the old version."
-                        f"Please disconnect and reconnect the device!"
-            )
-            return
-
-        logging.debug(f"dfutil updating {vidpid}...")
-        dfuargs = [
-            path_to_dfuutil,
-            "-D", self.firmwarepath.get(),
-            "-d", vidpid,
-        ]
-        self.updateproc = subprocess.Popen(
-            dfuargs,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE
-        )
-        s = ""
         line = ""
-        for c in iter(lambda: self.updateproc.stdout.read(1), b""):
+        s = ""
+        for c in dfu_util_update(self.firmwarepath.get(), vidpid):
             if c.decode() == "\n":
                 logging.debug(line)
-                line=""
+                line = ""
             else:
                 line += c.decode()
             if c == b'%':
                 v = int(s[-3:]) / 100
                 self.pro_upfw.set(v)
                 self.pro_upfw.update()
-                self.lbl_info.configure(text=f"Updating... {int(v*100)}%")
+                self.lbl_info.configure(text=f"Updating... {int(v * 100)}%")
             else:
                 s += c.decode()
         if "DFU state(7) = dfuMANIFEST, status(0) = No error condition is present" in s:
@@ -852,9 +863,15 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                         f"Your device should still be on the old version."
                         f"Please disconnect and reconnect the device!"
             )
-
-        device_list_frame = self.master.master.master.device_list_frame
-        device_list_frame.selected_device_hash = None
+        widget = self
+        while hasattr(widget, "master"):  # don't know who is master, look up the hierachy for device_list_frame
+            if hasattr(widget.master, "device_list_frame"):
+                device_list_frame = widget.master.device_list_frame
+                device_list_frame.selected_device_hash = None
+                device_hash = None
+                break
+            else:
+                widget = widget.master
         wait_for_reconnect(5)
 
     def update_from_file(self):

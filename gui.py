@@ -5,8 +5,10 @@ from tkinter import filedialog, messagebox
 import logging
 import argparse
 import customtkinter
-from Device import Device, device_classes
-from Switchology import SwitchologyDevice, NotSwitchologyDeviceError, NoSerialNumberError
+from customtkinter import CTkToplevel
+
+from Device import Device, device_classes, DfuDevice
+from Switchology import SwitchologyDevice, dfu_util_list_devices, NoSerialNumberError, SwitchologyDeviceUpdateFrame
 
 import swinput
 
@@ -223,10 +225,28 @@ class DeviceListFrame(customtkinter.CTkFrame):
                     title=f"Could not retrieve serial number for {device}!",
                     message=f"Could not retrieve serial number for\n"
                             f"\"{device}\"\n"
-                            f"The device may have stalled and will not show up in the device list\n"
+                            f"Try refreshing the list a couple of times."
+                            f"The device may have stalled and may not show up in the device list\n"
                             "Please unplug and replug device and restart companion.\n"
                             "If the problem persists, please reboot the computer"
                 )
+        self.after(100, self.check_for_dfu_devices)
+
+    def check_for_dfu_devices(self):
+        for vidpid in dfu_util_list_devices():
+            vid, pid = vidpid.split(":")
+            if messagebox.askyesno(
+                title=f"Device in bootloader found!",
+                message=f"Device with VID:0x{vid}, PID:0x{pid} may be a Switchology device stuck in bootloader.\n"
+                        f"Do you want to recover and flash the latest released firmware?",
+            ):
+                self.master.device_tabview.destroy()
+                self.master.device_tabview = customtkinter.CTkTabview(self, width=600, height=550)
+                tab = self.master.device_tabview.add("Update")
+                tabframe = SwitchologyDeviceUpdateFrame(tab, width=600, height=550)
+                tabframe.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+                self.master.device_tabview.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+                tabframe.refresh(DfuDevice(vidpid))
 
 
 
