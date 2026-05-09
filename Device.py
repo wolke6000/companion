@@ -214,6 +214,22 @@ class Device:
     def update_axis(self, axis_index, value):
         self.update_control(self._axes[axis_index], value)
 
+
+class DfuDevice:
+
+    def __init__(self, vidpid):
+        self._vidpid = vidpid
+
+    @property
+    def vidpid(self):
+        return self._vidpid
+
+    @property
+    def fwver(self):
+        return "unknown"
+
+
+
 class ControlIndicatorBase:
 
     def update_value(self, value):
