@@ -223,7 +223,8 @@ class DeviceListFrame(customtkinter.CTkFrame):
                     title=f"Could not retrieve serial number for {device}!",
                     message=f"Could not retrieve serial number for\n"
                             f"\"{device}\"\n"
-                            f"The device may have stalled and will not show up in the device list\n"
+                            f"Try refreshing the list a couple of times."
+                            f"The device may have stalled and may not show up in the device list\n"
                             "Please unplug and replug device and restart companion.\n"
                             "If the problem persists, please reboot the computer"
                 )
