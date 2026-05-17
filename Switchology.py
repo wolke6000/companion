@@ -429,8 +429,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.var_jsdz = StringVar(value="")
         self.var_jssa = StringVar(value="")
 
-        self.var_avid = StringVar(value="")
-        self.var_apid = StringVar(value="")
+        self.var_deid = StringVar(value="")
 
         self.lbl_fwve = customtkinter.CTkLabel(self, text='Firmware Version')
         self.lbl_fwve.grid(row=0, column=0, sticky="w")
@@ -482,6 +481,15 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.ent_blfc = customtkinter.CTkEntry(self, textvariable=self.var_blfc)
         self.ent_blfc.grid(row=7, column=1)
 
+        self.lbl_deid = customtkinter.CTkLabel(self, text="Device Id", padx=2, pady=2)
+        self.lbl_deid.grid(row=8, column=0, padx=2, sticky="w")
+        self.ent_deid = customtkinter.CTkComboBox(
+            self,
+            values=[str(x) for x in range(1,9)],
+            variable=self.var_deid
+        )
+        self.ent_deid.grid(row=8, column=1, padx=2)
+
         frm_elmo = customtkinter.CTkFrame(self)
         frm_elmo.columnconfigure(0, weight=1)
         frm_elmo.columnconfigure(1, weight=3)
@@ -528,73 +536,12 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.ent_jsdz = customtkinter.CTkEntry(frm_elmo, textvariable=self.var_jssa)
         self.ent_jsdz.grid(row=5, column=1, padx=2, sticky="e")
 
-        frm_elmo.grid(row=8, column=0, columnspan=2, sticky="ew")
-
-        # advanced settings
-        self.var_adva = tkinter.BooleanVar(value=False)
-        chk_adva = customtkinter.CTkCheckBox(self, text="Show advanced settings", variable=self.var_adva, command=self.show_hide_advanced_settings)
-        chk_adva.grid(row=9, column=0, columnspan=2, sticky="ew")
-        self.frm_adva = None
+        frm_elmo.grid(row=9, column=0, columnspan=2, sticky="ew")
 
         self.btn_write = customtkinter.CTkButton(self, text="Write and Restart", command=self.write_all)
-        self.btn_write.grid(row=11, column=0)
+        self.btn_write.grid(row=10, column=0)
         self.btn_reset = customtkinter.CTkButton(self, text="Factory Reset and Restart", command=self.factory_reset, fg_color="red", text_color="white")
-        self.btn_reset.grid(row=11, column=1)
-
-    def show_hide_advanced_settings(self):
-        def validate(value):
-            try:
-                if int(value, 16) > 0xFFFF:
-                    return False
-            except ValueError:
-                return False
-            return True
-
-        if self.var_adva.get():
-            if tkinter.messagebox.askyesno(
-                    title="Show advanced settings",
-                    message="Changing the USB Vendor ID (VID) and Product ID (PID) will change how games and other "
-                            "applications identify this device. Existing game bindings, controller mappings, and "
-                            "per-device settings associated with the current VID/PID may stop working and may need to "
-                            "be configured again. The companion software will still be able to detect and manage the "
-                            "device. However, invalid or conflicting VID/PID values may cause driver, compatibility, "
-                            "or device detection issues in other software or operating systems.\n"
-                            "These settings are intended for advanced users only.\n"
-                            "Continue?"
-            ):
-                self.frm_adva = customtkinter.CTkFrame(self)
-                self.frm_adva.columnconfigure(0, weight=1)
-                self.frm_adva.columnconfigure(1, weight=3)
-                self.frm_adva.grid(row=10, column=0, columnspan=2, sticky="ew")
-
-                vcmd = (self.register(validate), '%P')
-
-                self.lbl_avid = customtkinter.CTkLabel(self.frm_adva, text="Vendor Id (VID)", padx=2, pady=2)
-                self.lbl_avid.grid(row=0, column=0, padx=2, sticky="w")
-                self.ent_avid = customtkinter.CTkEntry(
-                    self.frm_adva,
-                    textvariable=self.var_avid,
-                    validate='key',
-                    validatecommand=vcmd,
-                )
-                self.ent_avid.grid(row=0, column=1, padx=2, sticky="e")
-
-                self.lbl_apid = customtkinter.CTkLabel(self.frm_adva, text="Product Id (PID)", padx=2, pady=2)
-                self.lbl_apid.grid(row=1, column=0, padx=2, sticky="w")
-                self.ent_apid = customtkinter.CTkEntry(
-                    self.frm_adva,
-                    textvariable=self.var_apid,
-                    validate='key',
-                    validatecommand=vcmd,
-                )
-                self.ent_apid.grid(row=1, column=1, padx=2, sticky="e")
-                self.refresh(self.device)
-            else:
-                self.var_adva.set(False)
-                if self.frm_adva is not None:
-                    self.frm_adva.destroy()
-        else:
-            self.frm_adva.destroy()
+        self.btn_reset.grid(row=10, column=1)
 
     def refresh(self, device):
         self.device = device
@@ -606,8 +553,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.var_blfc.set(device.backlight_factor)
         self.var_jsdz.set(device.joystick_deadzone)
         self.var_jssa.set(device.joystick_saturation)
-        self.var_avid.set(hex(device.vid))
-        self.var_apid.set(hex(device.pid))
+        self.var_deid.set(device.id+1)
 
         self.module_modes = device.module_mode
         if self.module_modes & 0x01:
@@ -637,10 +583,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             f'sbf {hex(int(self.var_blfc.get()))}',
             f'sem {hex(self.module_modes)}',
             f'sjs {hex(int(self.var_jsdz.get())<<8 | int(self.var_jssa.get()))}',
+            f'sid {hex(int(self.var_deid.get())-1)}'
         ]
-        if self.var_adva.get():
-            commands.append(f'svd {self.var_avid.get()}')
-            commands.append(f'spd {self.var_apid.get()}')
         for command in commands:
             ans = self.device.send_command(command)
             if "ok" in ans.lower():
@@ -914,6 +858,7 @@ class SwitchologyDevice(Device):
         self._joystick_settings = None
         self.serial_itf = None
         self.port = None
+        self._id = None
 
     def __del__(self):
         super().__del__()
@@ -1103,6 +1048,11 @@ class SwitchologyDevice(Device):
             self._joystick_settings = int(self.send_command("gjs"), 16)
         return self._joystick_settings & 0x00FF
 
+    @property
+    def id(self):
+        if not self._id:
+            self._id = int(self.send_command("gid"), 16)
+        return self._id
 
 device_classes[(0x0483, 0xA4F5)] = SwitchologyDevice  # VID & PID assigned to Switchology MCP (starting with firmware v0.4.0)
 device_classes[(0x0483, 0xD431)] = SwitchologyDevice  # compatibility with arbitrary VID and PID for older firmware prior v0.4.0
