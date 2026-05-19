@@ -950,6 +950,8 @@ class SwitchologyDevice(Device):
                 "eol": semantic_version.Version("1.0.0"),
                 "gjs": semantic_version.Version("1.2.0"),
                 "sjs": semantic_version.Version("1.2.0"),
+                "gid": semantic_version.Version("1.3.0"),
+                "sid": semantic_version.Version("1.3.0"),
             }
             ver = cmd_ver.get(command.split(" ")[0])
             if ver is not None:
