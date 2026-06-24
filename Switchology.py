@@ -34,7 +34,7 @@ class NoSerialNumberError(Exception):
 
 
 path_to_dfuutil = os.path.join("dfu-util", "dfu-util.exe")
-
+response_json = None
 
 def dfu_util_list_devices():
     logging.debug(f"dfutil list devices...")
@@ -706,10 +706,12 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                 self.firmwarepath.set(firmware_file.name)
                 self.update_firmware()
 
-        update_server_url = "https://us-central1-switchology-a3b47.cloudfunctions.net/download_latest_firmware"
-        logging.info("requesting firmware information from server...")
-        response = requests.get(update_server_url)
-        response_json = response.json()
+        global response_json
+        if response_json is None:
+            update_server_url = "https://us-central1-switchology-a3b47.cloudfunctions.net/download_latest_firmware"
+            logging.info("requesting firmware information from server...")
+            response = requests.get(update_server_url)
+            response_json = response.json()
         if self.device.fwver == response_json.get('tag'):
             logging.info("firmware is up to date")
             return
