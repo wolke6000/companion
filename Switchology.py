@@ -377,6 +377,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
     mode2s[0x0F] = 'C'
     mode2s[0x20] = 'D'
 
+    mode0s = ["separate", "merged"]
+
     def var_mode_update(self, *args):  # noqa
         if any(x == "" for x in [self.var_mode1.get(), self.var_mode2.get()]):
             return
@@ -386,6 +388,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
                 bmode = k
                 break
         value = 256 * int(self.var_mode1.get()) + bmode
+        if self.var_mode0.get() == "merged":
+            value += 0x8000
         self.var_mode.set(f"0x{value:04x}")
 
     def module_mode_8way_update(self, choice):
@@ -414,6 +418,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
 
         self.firmware_update_checked = False
 
+        self.var_mode0 = StringVar(value='')
+        self.var_mode0.trace_add("write", self.var_mode_update)
         self.var_mode1 = StringVar(value="")
         self.var_mode1.trace_add("write", self.var_mode_update)
         self.var_mode2 = StringVar(value='')
@@ -446,6 +452,16 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.ent_buid = customtkinter.CTkEntry(self, state='disabled', textvariable=self.var_buid, width=250)
         self.ent_buid.grid(column=1, row=2)
 
+        self.lbl_mode0 = customtkinter.CTkLabel(self, text='Daisychaining Mode')
+        self.cbx_mode0 = customtkinter.CTkComboBox(
+            self,
+            variable=self.var_mode0,
+            values=self.mode0s,
+            state='readonly',
+        )
+        self.lbl_mode0.grid(column=0, row=3, sticky="w")
+        self.cbx_mode0.grid(column=1, row=3)
+
         self.lbl_mode1 = customtkinter.CTkLabel(self, text='Logical devices')
         self.cbx_mode1 = customtkinter.CTkComboBox(
             self,
@@ -453,8 +469,8 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             values=["1", "2", "3", "4", "5"],
             state='readonly',
         )
-        self.lbl_mode1.grid(column=0, row=3, sticky="w")
-        self.cbx_mode1.grid(column=1, row=3)
+        self.lbl_mode1.grid(column=0, row=4, sticky="w")
+        self.cbx_mode1.grid(column=1, row=4)
 
         self.lbl_mode2 = customtkinter.CTkLabel(self, text='Buttonmode')
         self.cbx_mode2 = customtkinter.CTkComboBox(
@@ -463,32 +479,32 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
             values=list(self.mode2s.values()),
             state='readonly'
         )
-        self.lbl_mode2.grid(column=0, row=4, sticky="w")
-        self.cbx_mode2.grid(column=1, row=4)
+        self.lbl_mode2.grid(column=0, row=5, sticky="w")
+        self.cbx_mode2.grid(column=1, row=5)
 
         self.lbl_mode = customtkinter.CTkLabel(self, text='Mode Variable')
         self.ent_mode = customtkinter.CTkEntry(self, textvariable=self.var_mode, state='disabled')
-        self.lbl_mode.grid(column=0, row=5, sticky="w")
-        self.ent_mode.grid(column=1, row=5)
+        self.lbl_mode.grid(column=0, row=6, sticky="w")
+        self.ent_mode.grid(column=1, row=6)
 
         self.lbl_udpe = customtkinter.CTkLabel(self, text='Update Period in ms')
-        self.lbl_udpe.grid(row=6, column=0, sticky="w")
+        self.lbl_udpe.grid(row=7, column=0, sticky="w")
         self.ent_udpe = customtkinter.CTkEntry(self, textvariable=self.var_udpe)
-        self.ent_udpe.grid(row=6, column=1)
+        self.ent_udpe.grid(row=7, column=1)
 
         self.lbl_blfc = customtkinter.CTkLabel(self, text='Backlight Factor')
-        self.lbl_blfc.grid(row=7, column=0, sticky="w")
+        self.lbl_blfc.grid(row=8, column=0, sticky="w")
         self.ent_blfc = customtkinter.CTkEntry(self, textvariable=self.var_blfc)
-        self.ent_blfc.grid(row=7, column=1)
+        self.ent_blfc.grid(row=8, column=1)
 
         self.lbl_deid = customtkinter.CTkLabel(self, text="Device Id", padx=2, pady=2)
-        self.lbl_deid.grid(row=8, column=0, padx=2, sticky="w")
+        self.lbl_deid.grid(row=9, column=0, padx=2, sticky="w")
         self.ent_deid = customtkinter.CTkComboBox(
             self,
             values=[str(x) for x in range(1,9)],
             variable=self.var_deid
         )
-        self.ent_deid.grid(row=8, column=1, padx=2)
+        self.ent_deid.grid(row=9, column=1, padx=2)
 
         frm_elmo = customtkinter.CTkFrame(self)
         frm_elmo.columnconfigure(0, weight=1)
@@ -571,8 +587,14 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
 
 
         mode = int(self.var_mode.get(), 16)
-        mode1 = int(mode / 256)
-        mode2 = int(mode % 256)
+        mode0 = int((mode & 0x8000) >> 15)
+        mode1 = int((mode & 0x0F00) >> 8)
+        mode2 = int(mode & 0x00FF)
+        print(mode)
+        print(mode0)
+        print(mode1)
+        print(mode2)
+        self.var_mode0.set(self.mode0s[mode0])
         self.var_mode1.set(str(mode1))
         self.var_mode2.set(self.mode2s[mode2])
 
