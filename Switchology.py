@@ -753,6 +753,8 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                 f"Recommended version: {server_tag}\n"
                 f"Published at: "
                 f"{firmware_info.get('published_at', 'unknown')}\n\n"
+                f"Release Notes:\n"
+                f"{firmware_info.get('release_notes', 'unknown')}\n\n"
                 "Do you want to update?"
             ),
         )
