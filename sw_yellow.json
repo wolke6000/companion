@@ -116,16 +116,16 @@
     "border_width": 3,
     "button_length": 0,
     "fg_color": [
-      "#FFD400",
-      "#FFD700"
+      "gray60",
+      "gray45"
     ],
     "progress_color": [
       "#FFD400",
       "#FFD400"
     ],
     "button_color": [
-      "gray36",
-      "#FFD700"
+      "#1a1a06",
+      "#efefef"
     ],
     "button_hover_color": [
       "#d0b100",

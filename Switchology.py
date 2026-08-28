@@ -656,15 +656,17 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         self._firmware_tempdir = None
         self.btn_upol = customtkinter.CTkButton(self, text="Update from server", command=self.update_from_server)
         self.btn_upol.grid(column=0, row=0, padx=5, pady=5)
+        self.swi_prer = customtkinter.CTkSwitch(self, text="include Prerelases")
+        self.swi_prer.grid(column=1, row=0, padx=5, pady=5, sticky="w")
         self.btn_slfw = customtkinter.CTkButton(self, text="Update from file", command=self.update_from_file)
-        self.btn_slfw.grid(column=1, row=0, padx=5, pady=5)
+        self.btn_slfw.grid(column=2, row=0, padx=5, pady=5)
         self.lbl_info = customtkinter.CTkLabel(self, text="")
-        self.lbl_info.grid(column=0, row=1, columnspan=2, padx=5, pady=5)
+        self.lbl_info.grid(column=0, row=1, columnspan=3, padx=5, pady=5)
         self.pro_upfw = customtkinter.CTkProgressBar(self, orientation="horizontal", mode='determinate', width=600, height=15)
-        self.pro_upfw.grid(column=0, row=2, columnspan=2, padx=5, pady=5)
+        self.pro_upfw.grid(column=0, row=2, columnspan=3, padx=5, pady=5)
         self.pro_upfw.set(0)
         self.txt_lice = customtkinter.CTkTextbox(self, width=600, height=400)
-        self.txt_lice.grid(column=0, row=3, columnspan=2, padx=5, pady=5)
+        self.txt_lice.grid(column=0, row=3, columnspan=3, padx=5, pady=5)
         self.txt_lice.insert("end",
                              f"This software uses dfu-util, an open-source utility licensed under the GNU General Public License v2 (GPL-2.0).\n"
                              f"\n"
