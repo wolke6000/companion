@@ -3,8 +3,10 @@ import subprocess
 import time
 import tkinter.messagebox
 
+from settings import settings
+
 import customtkinter
-from tkinter import StringVar, filedialog, messagebox
+from tkinter import StringVar, BooleanVar, filedialog, messagebox
 import re
 import semantic_version
 
@@ -653,10 +655,11 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
         self.firmwarepath = StringVar(value="")
+        self.var_prer = BooleanVar(value=settings.get("include_prereleases", False))
         self._firmware_tempdir = None
         self.btn_upol = customtkinter.CTkButton(self, text="Update from server", command=self.update_from_server)
         self.btn_upol.grid(column=0, row=0, padx=5, pady=5)
-        self.swi_prer = customtkinter.CTkSwitch(self, text="include Prerelases")
+        self.swi_prer = customtkinter.CTkSwitch(self, text="include Prerelases", variable=self.var_prer, command=self._prerelease_setting_changed)
         self.swi_prer.grid(column=1, row=0, padx=5, pady=5, sticky="w")
         self.btn_slfw = customtkinter.CTkButton(self, text="Update from file", command=self.update_from_file)
         self.btn_slfw.grid(column=2, row=0, padx=5, pady=5)
@@ -686,10 +689,16 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         self.device = device
         self.update_from_server()
 
+    def _prerelease_setting_changed(self):
+        settings.set("include_prereleases", self.var_prer.get())
+
     @staticmethod
     def _request_firmware_info():
         logging.info("requesting firmware information from server...")
-        response = requests.get(UPDATE_SERVER_URL,timeout=(5, 15),)
+        url = UPDATE_SERVER_URL
+        if settings.get("include_prereleases", False):
+            url += "?prerelease=true"
+        response = requests.get(url,timeout=(5, 15),)
         response.raise_for_status()
         try:
             firmware_info = response.json()
