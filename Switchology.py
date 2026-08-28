@@ -934,18 +934,20 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         if line:
             logging.debug(line)
         returncode = updateproc.wait()
-        if returncode == 0:
+        manifest_complete = "Download done." in output and "DFU state(7) = dfuMANIFEST, status(0) = No error condition is present" in output
+        expected_disconnect = "unable to read DFU status after completion (LIBUSB_ERROR_IO)" in output
+        flash_successful = returncode == 0 or (manifest_complete and expected_disconnect)
+        if flash_successful:
+            if returncode != 0:
+                logging.info(f"dfu-util lost the device after successful manifestation; ignoring exit code {returncode}")
             logging.info("Firmware update complete!")
             self.pro_upfw.set(1)
             self.lbl_info.configure(text="Complete")
             messagebox.showinfo(
                 title="Firmware update complete!",
-                message=(
-                    "Your device is now on the "
-                    "new version!"
-                ),
+                message="Your device is now on the new version!",
             )
-            device_list_frame = (self._find_device_list_frame())
+            device_list_frame = self._find_device_list_frame()
             if device_list_frame is not None:
                 device_list_frame.selected_device_hash = None
                 self._wait_for_reconnect(5, device_list_frame, device_hash)
@@ -959,14 +961,12 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                 title="Firmware update failed!",
                 message=(
                     "The firmware update failed!\n\n"
-                    f"dfu-util exited with code "
-                    f"{returncode}.\n"
+                    f"dfu-util exited with code {returncode}.\n"
                     "Your device may still be in DFU mode.\n"
-                    "Please disconnect and reconnect "
-                    "the device."
+                    "Please disconnect and reconnect the device."
                 ),
             )
-            device_list_frame = (self._find_device_list_frame())
+            device_list_frame = self._find_device_list_frame()
             if device_list_frame is not None:
                 self.after(1000, device_list_frame.refresh)
             self._finish_update()
