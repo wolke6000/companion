@@ -34,35 +34,43 @@ class NoSerialNumberError(Exception):
 
 
 path_to_dfuutil = os.path.join("dfu-util", "dfu-util.exe")
-response_json = None
+
+UPDATE_SERVER_URL = (
+    "https://us-central1-switchology-a3b47.cloudfunctions.net/"
+    "download_latest_firmware"
+)
+
+DFU_VIDPIDS = (
+    "0483:a4f5",
+    "1209:db42",
+)
+
 
 def dfu_util_list_devices():
     logging.debug(f"dfutil list devices...")
-    updateproc = subprocess.Popen(
+    result = subprocess.run(
         [path_to_dfuutil, "-l"],
-        stderr=subprocess.PIPE,
-        stdout=subprocess.PIPE
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=5,
+        check=False,
     )
-    listout = updateproc.stdout.read().decode()
+    listout = result.stdout.decode(errors="replace")
     logging.debug(listout)
-    for vp in ["0483:a4f5", "1209:db42"]:
+    for vp in DFU_VIDPIDS:
         if vp in listout:
             yield vp
 
+
 def dfu_util_update(firmwarepath, vidpid):
     logging.debug(f"dfutil updating {vidpid}...")
-    dfuargs = [
-        path_to_dfuutil,
-        "-D", firmwarepath,
-        "-d", vidpid,
-    ]
-    updateproc = subprocess.Popen(
-        dfuargs,
-        stderr=subprocess.PIPE,
-        stdout=subprocess.PIPE
+    return subprocess.Popen(
+        [path_to_dfuutil, "-D", firmwarepath, "-d", vidpid, ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=0,
     )
-    for c in iter(lambda: updateproc.stdout.read(1), b""):
-        yield c
+
 
 class SwitchologyDeviceViewFrame(DeviceViewFrame):
 
@@ -645,6 +653,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
         self.firmwarepath = StringVar(value="")
+        self._firmware_tempdir = None
         self.btn_upol = customtkinter.CTkButton(self, text="Update from server", command=self.update_from_server)
         self.btn_upol.grid(column=0, row=0, padx=5, pady=5)
         self.btn_slfw = customtkinter.CTkButton(self, text="Update from file", command=self.update_from_file)
@@ -675,168 +684,325 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         self.device = device
         self.update_from_server()
 
+    @staticmethod
+    def _request_firmware_info():
+        logging.info("requesting firmware information from server...")
+        response = requests.get(UPDATE_SERVER_URL,timeout=(5, 15),)
+        response.raise_for_status()
+        try:
+            firmware_info = response.json()
+        except ValueError as exc:
+            raise ValueError("Firmware server returned invalid JSON.") from exc
+        if not isinstance(firmware_info, dict):
+            raise ValueError("Firmware server returned an invalid response.")
+        for field in ("tag", "hash", "url"):
+            value = firmware_info.get(field)
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"Firmware server response is missing {field!r}.")
+        return firmware_info
+
+    def _cleanup_firmware_tempdir(self):
+        if self._firmware_tempdir is not None:
+            self._firmware_tempdir.cleanup()
+            self._firmware_tempdir = None
+
     def update_from_server(self):
-        def perform_update():
-            with TemporaryDirectory() as tempdir:
-                logging.info("firmware file downloading to PC...")
-                self.lbl_info.configure(text="Downloading to PC...")
-                logging.debug(f"temporary directory created: \"{tempdir}\"")
-                file_response = requests.get(response_json.get("url"))
-                hash_calculator = hashlib.sha256()
-                firmware_file_path = os.path.join(tempdir, f"{response_json.get('tag')}.bin")
-                with open(firmware_file_path, "w+b") as firmware_file:
-                    for chunk in file_response.iter_content(chunk_size=8192):
-                        firmware_file.write(chunk)
-                        hash_calculator.update(chunk)
-
-                    # firmware_file.seek(0)
-                firmware_hash = hash_calculator.hexdigest()
-
-                if firmware_hash != response_json.get('hash'):
-                    logging.error(f"firmware file download to PC was not successful!")
-                    self.lbl_info.configure(text="Downloading to PC not successful!")
-                    messagebox.showerror(
-                        title="Downloading to PC not successful!",
-                        message=f"The new firmware could not be downloaded to your PC!"
-                    )
-                    return
-
-                logging.info("firmware file downloaded to PC")
-                self.lbl_info.configure(text="Downloading to PC successful")
-                self.firmwarepath.set(firmware_file.name)
-                self.update_firmware()
-
-        global response_json
-        if response_json is None:
-            update_server_url = "https://us-central1-switchology-a3b47.cloudfunctions.net/download_latest_firmware"
-            logging.info("requesting firmware information from server...")
-            response = requests.get(update_server_url)
-            response_json = response.json()
-        if self.device.fwver == response_json.get('tag'):
+        try:
+            firmware_info = self._request_firmware_info()
+        except (requests.RequestException, ValueError) as exc:
+            logging.error(f"Firmware update check failed: {exc}")
+            self.lbl_info.configure(text="Could not check for firmware updates.")
+            messagebox.showerror(
+                title="Firmware update check failed!",
+                message="Could not check for firmware updates.\n\n{exc}",
+            )
+            return
+        server_tag = firmware_info["tag"]
+        if self.device.fwver == server_tag:
             logging.info("firmware is up to date")
+            self.lbl_info.configure(
+                text="Firmware is up to date."
+            )
             return
         ans = messagebox.askquestion(
-                title="Firmware update available!",
-                message=f"There is a new version available! Do you want to update?\n"
-                        f"current version: \"{self.device.fwver}\", new version: \"{response_json.get('tag')}\"\n"
-                        f"published at: {response_json.get('published_at')}\n"
+            title="Firmware update available!",
+            message=(
+                "A different recommended firmware version "
+                "is available.\n\n"
+                f"Current version: {self.device.fwver}\n"
+                f"Recommended version: {server_tag}\n"
+                f"Published at: "
+                f"{firmware_info.get('published_at', 'unknown')}\n\n"
+                "Do you want to update?"
+            ),
         )
-        if ans == 'yes':
+        if ans == "yes":
             self.master.master.set("Update")
-            self.after(100, perform_update)
+            self.after(100, self._download_server_firmware,server_tag)
 
-    def update_firmware(self):
-        def wait_for_reconnect(numsec):
-            if numsec > 0:
-                self.lbl_info.configure(text=f"Complete. Waiting for device to restart {numsec}s...")
-                time.sleep(1)
-                self.after(1, wait_for_reconnect, (numsec-1))
-            else:
-                device_list_frame.refresh()
-                if device_hash in device_list_frame.devices.keys():
-                    device_list_frame.select(device_hash)
-
-        logging.info("Verifying firmware file integrity...")
-        self.lbl_info.configure(text="Verifying firmware file integrity...")
-        if verify_firmware(self.firmwarepath.get()):
-            logging.info("Firmware file integrity intact")
-        else:
-            logging.error("Firmware file integrity compromised!")
-            self.lbl_info.configure(text="firmware file integrity compromised!")
-            messagebox.showerror(
-                title="Firmware update failed!",
-                message=f"The integrity of the firmware file could not be verified.\n"
-                        f"Please retry!"
-            )
-            return
-
-        logging.info("updating firmware on device...")
-        if isinstance(self.device, SwitchologyDevice):
-            device_hash = self.device.hash
-            self.device.send_command("btl")  # switch to bootloader
-            time.sleep(0.1)
-            self.device.reset()  # reset
-            time.sleep(1)
-            try:
-                vidpid = list(dfu_util_list_devices())[0]
-            except IndexError:
-                logging.error(f"did not find any matching DFU device")
-                self.lbl_info.configure(text=f"Failed!")
-                messagebox.showerror(
-                    title="Firmware update failed!",
-                    message=f"The firmware update failed!"
-                            f"No matching DFU device was found!"
-                            f"Your device should still be on the old version."
-                            f"Please disconnect and reconnect the device!"
+    def _download_server_firmware(self, expected_tag):
+        try:
+            # Request metadata again to get a fresh signed URL.
+            firmware_info = self._request_firmware_info()
+            if firmware_info["tag"] != expected_tag:
+                logging.info(
+                    "Firmware changed while waiting for "
+                    "confirmation: "
+                    f"{expected_tag} -> "
+                    f"{firmware_info['tag']}"
+                )
+                self.lbl_info.configure(text="Available firmware changed.\nPlease retry.")
+                messagebox.showinfo(
+                    title="Firmware version changed",
+                    message=(
+                        "The recommended firmware version changed "
+                        "while the update was waiting to start.\n\n"
+                        "Please start the update again."
+                    ),
                 )
                 return
-        elif isinstance(self.device, DfuDevice):
-            vidpid = self.device.vidpid
-        else:
-            raise TypeError("Unexpected Device Type!")
+            self._cleanup_firmware_tempdir()
+            self._firmware_tempdir = TemporaryDirectory()
+            tempdir = self._firmware_tempdir.name
+            logging.info("firmware file downloading to PC...")
+            logging.debug(f'temporary directory created: "{tempdir}"')
+            self.lbl_info.configure(text="Downloading to PC...")
+            with requests.get(firmware_info["url"], stream=True, timeout=(5, 30),) as file_response:
+                file_response.raise_for_status()
+                firmware_file_path = os.path.join(tempdir, f"{firmware_info['tag']}.bin")
+                hash_calculator = hashlib.sha256()
+                with open(firmware_file_path, "wb") as firmware_file:
+                    for chunk in file_response.iter_content(chunk_size=8192):
+                        if not chunk:
+                            continue
+                        firmware_file.write(chunk)
+                        hash_calculator.update(chunk)
+            firmware_hash = hash_calculator.hexdigest()
+            expected_hash = firmware_info["hash"].lower()
+            if firmware_hash.lower() != expected_hash:
+                logging.error("firmware file download hash \nverification failed")
+                self.lbl_info.configure(text="Downloading to PC not successful!")
+                messagebox.showerror(
+                    title="Downloading to PC not successful!",
+                    message=(
+                        "The downloaded firmware failed "
+                        "SHA-256 verification."
+                    ),
+                )
+                self._cleanup_firmware_tempdir()
+                return
+            logging.info("firmware file downloaded to PC")
+            self.lbl_info.configure(text="Downloading to PC successful")
+            self.firmwarepath.set(firmware_file_path)
+            self.update_firmware()
 
-        logging.debug(f"running dfutil...")
-
-        line = ""
-        s = ""
-        for c in dfu_util_update(self.firmwarepath.get(), vidpid):
-            if c.decode() == "\n":
-                logging.debug(line)
-                line = ""
-            else:
-                line += c.decode()
-            if c == b'%':
-                v = int(s[-3:]) / 100
-                self.pro_upfw.set(v)
-                self.pro_upfw.update()
-                self.lbl_info.configure(text=f"Updating... {int(v * 100)}%")
-            else:
-                s += c.decode()
-        if "DFU state(7) = dfuMANIFEST, status(0) = No error condition is present" in s:
-            logging.info("Firmware update complete!")
-            self.lbl_info.configure(text=f"Complete")
-            messagebox.showinfo(
-                title="Firmware update complete!",
-                message=f"Your device is now on the new version!"
+        except (requests.RequestException, OSError, ValueError) as exc:
+            logging.error(f"Firmware download failed: {exc}")
+            self.lbl_info.configure(text="Downloading to PC not successful!")
+            messagebox.showerror(
+                title="Downloading to PC not successful!",
+                message=(
+                    "The new firmware could not be downloaded "
+                    "to your PC.\n\n"
+                    f"{exc}"
+                ),
             )
-        else:
-            logging.error(f"Firmware update failed!")
-            self.lbl_info.configure(text=f"Failed!")
-            logging.error(s)
+            self._cleanup_firmware_tempdir()
+
+    def update_firmware(self):
+        firmware_path = self.firmwarepath.get()
+        logging.info("Verifying firmware file integrity...")
+        self.lbl_info.configure(text="Verifying firmware file integrity...")
+        try:
+            firmware_valid = verify_firmware(firmware_path)
+        except OSError as exc:
+            logging.error(f"Could not read firmware file: {exc}")
+            firmware_valid = False
+        if not firmware_valid:
+            logging.error("Firmware file integrity compromised!")
+            self.lbl_info.configure(text="Firmware file integrity compromised!")
             messagebox.showerror(
                 title="Firmware update failed!",
-                message=f"The firmware update failed!"
-                        f"Your device should still be on the old version."
-                        f"Please disconnect and reconnect the device!"
+                message=(
+                    "The integrity of the firmware file "
+                    "could not be verified.\n"
+                    "Please retry!"
+                ),
             )
-        widget = self
-        while hasattr(widget, "master"):  # don't know who is master, look up the hierachy for device_list_frame
-            if hasattr(widget.master, "device_list_frame"):
-                device_list_frame = widget.master.device_list_frame
-                device_list_frame.selected_device_hash = None
-                device_hash = None
+            self._cleanup_firmware_tempdir()
+            return
+        logging.info("Firmware file integrity intact")
+        logging.info("updating firmware on device...")
+        self.pro_upfw.set(0)
+        if isinstance(self.device, SwitchologyDevice):
+            device_hash = self.device.hash
+            try:
+                self.device.send_command("btl")
+            except Exception as exc:
+                self._show_update_error("Could not switch the device to bootloader mode.",exc)
+                self._cleanup_firmware_tempdir()
+                return
+            # Allow the bootloader command to reach the device
+            # without blocking the Tkinter event loop.
+            self.after(100, self._reset_into_bootloader, device_hash,)
+            return
+        if isinstance(self.device, DfuDevice):
+            self._flash_firmware(self.device.vidpid,None)
+            return
+        self._cleanup_firmware_tempdir()
+        raise TypeError("Unexpected Device Type!")
+
+    def _reset_into_bootloader(self, device_hash):
+        try:
+            self.device.reset()
+        except Exception as exc:
+            self._show_update_error("Could not reset the device into bootloader mode.", exc)
+            self._cleanup_firmware_tempdir()
+            return
+        deadline = time.monotonic() + 5.0
+        self.lbl_info.configure(text="Waiting for DFU device...")
+        self.after(200, self._poll_for_dfu_device, deadline, device_hash)
+
+    def _poll_for_dfu_device(self, deadline, device_hash):
+        try:
+            devices = list(dfu_util_list_devices())
+        except (OSError, subprocess.SubprocessError) as exc:
+            self._show_update_error("Could not enumerate DFU devices.", exc)
+            self._cleanup_firmware_tempdir()
+            return
+        if devices:
+            self._flash_firmware(devices[0], device_hash)
+            return
+        if time.monotonic() >= deadline:
+            logging.error("did not find any matching DFU device")
+            self.lbl_info.configure(text="Failed!")
+            messagebox.showerror(
+                title="Firmware update failed!",
+                message=(
+                    "The firmware update failed!\n\n"
+                    "No matching DFU device was found.\n"
+                    "Your device should still be on the "
+                    "old version.\n"
+                    "Please disconnect and reconnect "
+                    "the device."
+                ),
+            )
+            self._cleanup_firmware_tempdir()
+            return
+
+        self.after(200, self._poll_for_dfu_device, deadline, device_hash)
+
+    def _flash_firmware(self, vidpid, device_hash):
+        logging.debug("running dfutil...")
+        try:
+            updateproc = dfu_util_update(self.firmwarepath.get(), vidpid)
+        except OSError as exc:
+            self._show_update_error("Could not start dfu-util.", exc)
+            self._cleanup_firmware_tempdir()
+            return
+        line = ""
+        output = ""
+        while True:
+            c = updateproc.stdout.read(1)
+            if not c:
                 break
+            text = c.decode(errors="replace")
+            output += text
+            if text == "\n":
+                if line:
+                    logging.debug(line)
+                line = ""
             else:
-                widget = widget.master
-        wait_for_reconnect(5)
+                line += text
+            match = re.search(r"(\d{1,3})%$",output[-16:],)
+            if match is not None:
+                percent = min(int(match.group(1)), 100)
+                self.pro_upfw.set(percent / 100)
+                self.lbl_info.configure(text=f"Updating... {percent}%")
+                self.update_idletasks()
+        if line:
+            logging.debug(line)
+        returncode = updateproc.wait()
+        if returncode == 0:
+            logging.info("Firmware update complete!")
+            self.pro_upfw.set(1)
+            self.lbl_info.configure(text="Complete")
+            messagebox.showinfo(
+                title="Firmware update complete!",
+                message=(
+                    "Your device is now on the "
+                    "new version!"
+                ),
+            )
+            device_list_frame = (self._find_device_list_frame())
+            if device_list_frame is not None:
+                device_list_frame.selected_device_hash = None
+                self._wait_for_reconnect(5, device_list_frame, device_hash)
+        else:
+            logging.error(f"Firmware update failed! ndfu-util exit code: {returncode}")
+            logging.error(output)
+            self.lbl_info.configure(text="Failed!")
+            messagebox.showerror(
+                title="Firmware update failed!",
+                message=(
+                    "The firmware update failed!\n\n"
+                    f"dfu-util exited with code "
+                    f"{returncode}.\n"
+                    "Your device may still be in DFU mode.\n"
+                    "Please disconnect and reconnect "
+                    "the device."
+                ),
+            )
+            device_list_frame = (self._find_device_list_frame())
+            if device_list_frame is not None:
+                self.after(1000, device_list_frame.refresh)
+        self._cleanup_firmware_tempdir()
+
+    def _find_device_list_frame(self):
+        widget = self
+        while True:
+            master = getattr(widget, "master", None)
+            if master is None:
+                return None
+            if hasattr(master, "device_list_frame"):
+                return master.device_list_frame
+            widget = master
+
+    def _wait_for_reconnect(self, numsec, device_list_frame, device_hash):
+        if numsec > 0:
+            self.lbl_info.configure(text=(f"Complete. Waiting for device \nto restart {numsec}s..."))
+            self.after(1000, self._wait_for_reconnect, numsec - 1, device_list_frame, device_hash)
+            return
+        device_list_frame.refresh()
+        if (device_hash is not None and device_hash in device_list_frame.devices):
+            device_list_frame.select(device_hash)
+
+    def _show_update_error(self, message, exc=None):
+        if exc is not None:
+            logging.error(f"{message} {exc}")
+        else:
+            logging.error(message)
+        self.lbl_info.configure(text="Failed!")
+        details = ""
+        if exc is not None:
+            details = f"\n\n{exc}"
+        messagebox.showerror(
+            title="Firmware update failed!",
+            message=message + details,
+        )
 
     def update_from_file(self):
-        self.pro_upfw['value'] = 0
+        self.pro_upfw.set(0)
+        self._cleanup_firmware_tempdir()
         filetypes = (
             ('firmware files', '*.bin'),
             ('All files', '*.*')
         )
-
-        filename = filedialog.askopenfilename(
-            title='Open a file',
-            initialdir='/',
-            filetypes=filetypes)
-
-        if os.path.isfile(filename):
-            self.firmwarepath.set(filename)
-            # self.btn_upfw.configure(state="normal")
-            # self.ent_fwpt.xview_moveto(1)
-            logging.debug(f"firmware update file \"{filename}\" selected.")
+        filename = filedialog.askopenfilename(title="Open a file", initialdir="/", filetypes=filetypes,)
+        if not os.path.isfile(filename):
+            return
+        self.firmwarepath.set(filename)
+        logging.debug(f"firmware update file \"{filename}\" selected.")
         self.update_firmware()
 
 
