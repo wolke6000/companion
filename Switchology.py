@@ -994,13 +994,15 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
 
     def _wait_for_reconnect(self, numsec, device_list_frame, device_hash):
         if numsec > 0:
-            self.lbl_info.configure(text=(f"Complete. Waiting for device \nto restart {numsec}s..."))
+            self.lbl_info.configure(text=f"Complete. Waiting for device to restart {numsec}s...")
             self.after(1000, self._wait_for_reconnect, numsec - 1, device_list_frame, device_hash)
             return
+        # The refresh may destroy this update frame, so clean up
+        # everything belonging to it before refreshing the device list.
+        self._cleanup_firmware_tempdir()
         device_list_frame.refresh()
-        if (device_hash is not None and device_hash in device_list_frame.devices):
+        if device_hash is not None and device_hash in device_list_frame.devices:
             device_list_frame.select(device_hash)
-        self._finish_update()
 
     def _show_update_error(self, message, exc=None):
         if exc is not None:
