@@ -659,7 +659,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         self._firmware_tempdir = None
         self.btn_upol = customtkinter.CTkButton(self, text="Update from server", command=self.update_from_server)
         self.btn_upol.grid(column=0, row=0, padx=5, pady=5)
-        self.swi_prer = customtkinter.CTkSwitch(self, text="include Prerelases", variable=self.var_prer, command=self._prerelease_setting_changed)
+        self.swi_prer = customtkinter.CTkSwitch(self, text="include prereleases", variable=self.var_prer, command=self._prerelease_setting_changed)
         self.swi_prer.grid(column=1, row=0, padx=5, pady=5, sticky="w")
         self.btn_slfw = customtkinter.CTkButton(self, text="Update from file", command=self.update_from_file)
         self.btn_slfw.grid(column=2, row=0, padx=5, pady=5)
@@ -720,6 +720,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
     def _set_update_controls_enabled(self, enabled):
         state = "normal" if enabled else "disabled"
         self.btn_upol.configure(state=state)
+        self.btn_slfw.configure(state=state)
         self.btn_slfw.configure(state=state)
 
     def _finish_update(self):
