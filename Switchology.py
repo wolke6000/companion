@@ -865,7 +865,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
 
     def _reset_into_bootloader(self, device_hash):
         try:
-            self.device.reset()
+            self.device.reset(wait=False)
         except Exception as exc:
             self._show_update_error("Could not reset the device into bootloader mode.", exc)
             self._cleanup_firmware_tempdir()
@@ -1156,7 +1156,7 @@ class SwitchologyDevice(Device):
         self.close_comport()
         return ans
 
-    def reset(self):
+    def reset(self, wait=True):
         self._build_id = None
         self._fw_ver = None
         self._hw_ver = None
@@ -1164,7 +1164,8 @@ class SwitchologyDevice(Device):
         self._update_period = None
         self._backlight_factor = None
         self.send_command("rst")
-        time.sleep(5)
+        if wait:
+            time.sleep(5)
 
     @property
     def build_id(self):
