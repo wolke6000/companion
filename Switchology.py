@@ -389,7 +389,7 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
                 break
         value = 256 * int(self.var_mode1.get()) + bmode
         if self.var_mode0.get() == "merged":
-            value += 0x8000
+            value |= 0x8000
         self.var_mode.set(f"0x{value:04x}")
 
     def module_mode_8way_update(self, choice):
@@ -552,12 +552,12 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         self.ent_jsdz = customtkinter.CTkEntry(frm_elmo, textvariable=self.var_jssa)
         self.ent_jsdz.grid(row=5, column=1, padx=2, sticky="e")
 
-        frm_elmo.grid(row=9, column=0, columnspan=2, sticky="ew")
+        frm_elmo.grid(row=10, column=0, columnspan=2, sticky="ew")
 
         self.btn_write = customtkinter.CTkButton(self, text="Write and Restart", command=self.write_all)
-        self.btn_write.grid(row=10, column=0)
+        self.btn_write.grid(row=11, column=0)
         self.btn_reset = customtkinter.CTkButton(self, text="Factory Reset and Restart", command=self.factory_reset, fg_color="red", text_color="white")
-        self.btn_reset.grid(row=10, column=1)
+        self.btn_reset.grid(row=11, column=1)
 
     def refresh(self, device):
         self.device = device
@@ -590,10 +590,6 @@ class SwitchologyDeviceConfigFrame(DeviceViewFrame):
         mode0 = int((mode & 0x8000) >> 15)
         mode1 = int((mode & 0x0F00) >> 8)
         mode2 = int(mode & 0x00FF)
-        print(mode)
-        print(mode0)
-        print(mode1)
-        print(mode2)
         self.var_mode0.set(self.mode0s[mode0])
         self.var_mode1.set(str(mode1))
         self.var_mode2.set(self.mode2s[mode2])
