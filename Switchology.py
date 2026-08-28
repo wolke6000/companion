@@ -706,6 +706,15 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
             self._firmware_tempdir.cleanup()
             self._firmware_tempdir = None
 
+    def _set_update_controls_enabled(self, enabled):
+        state = "normal" if enabled else "disabled"
+        self.btn_upol.configure(state=state)
+        self.btn_slfw.configure(state=state)
+
+    def _finish_update(self):
+        self._cleanup_firmware_tempdir()
+        self._set_update_controls_enabled(True)
+
     def update_from_server(self):
         try:
             firmware_info = self._request_firmware_info()
@@ -714,7 +723,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
             self.lbl_info.configure(text="Could not check for firmware updates.")
             messagebox.showerror(
                 title="Firmware update check failed!",
-                message="Could not check for firmware updates.\n\n{exc}",
+                message=f"Could not check for firmware updates.\n\n{exc}",
             )
             return
         server_tag = firmware_info["tag"]
@@ -737,6 +746,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
             ),
         )
         if ans == "yes":
+            self._set_update_controls_enabled(False)
             self.master.master.set("Update")
             self.after(100, self._download_server_firmware,server_tag)
 
@@ -760,6 +770,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                         "Please start the update again."
                     ),
                 )
+                self._finish_update()
                 return
             self._cleanup_firmware_tempdir()
             self._firmware_tempdir = TemporaryDirectory()
@@ -789,7 +800,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                         "SHA-256 verification."
                     ),
                 )
-                self._cleanup_firmware_tempdir()
+                self._finish_update()
                 return
             logging.info("firmware file downloaded to PC")
             self.lbl_info.configure(text="Downloading to PC successful")
@@ -807,7 +818,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                     f"{exc}"
                 ),
             )
-            self._cleanup_firmware_tempdir()
+            self._finish_update()
 
     def update_firmware(self):
         firmware_path = self.firmwarepath.get()
@@ -829,7 +840,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                     "Please retry!"
                 ),
             )
-            self._cleanup_firmware_tempdir()
+            self._finish_update()
             return
         logging.info("Firmware file integrity intact")
         logging.info("updating firmware on device...")
@@ -849,7 +860,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         if isinstance(self.device, DfuDevice):
             self._flash_firmware(self.device.vidpid,None)
             return
-        self._cleanup_firmware_tempdir()
+        self._finish_update()
         raise TypeError("Unexpected Device Type!")
 
     def _reset_into_bootloader(self, device_hash):
@@ -887,7 +898,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
                     "the device."
                 ),
             )
-            self._cleanup_firmware_tempdir()
+            self._finish_update()
             return
 
         self.after(200, self._poll_for_dfu_device, deadline, device_hash)
@@ -938,8 +949,10 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
             if device_list_frame is not None:
                 device_list_frame.selected_device_hash = None
                 self._wait_for_reconnect(5, device_list_frame, device_hash)
+            else:
+                self._finish_update()
         else:
-            logging.error(f"Firmware update failed! ndfu-util exit code: {returncode}")
+            logging.error(f"Firmware update failed! dfu-util exit code: {returncode}")
             logging.error(output)
             self.lbl_info.configure(text="Failed!")
             messagebox.showerror(
@@ -956,7 +969,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
             device_list_frame = (self._find_device_list_frame())
             if device_list_frame is not None:
                 self.after(1000, device_list_frame.refresh)
-        self._cleanup_firmware_tempdir()
+            self._finish_update()
 
     def _find_device_list_frame(self):
         widget = self
@@ -976,6 +989,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
         device_list_frame.refresh()
         if (device_hash is not None and device_hash in device_list_frame.devices):
             device_list_frame.select(device_hash)
+        self._finish_update()
 
     def _show_update_error(self, message, exc=None):
         if exc is not None:
@@ -990,6 +1004,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
             title="Firmware update failed!",
             message=message + details,
         )
+        self._finish_update()
 
     def update_from_file(self):
         self.pro_upfw.set(0)
@@ -1003,6 +1018,7 @@ class SwitchologyDeviceUpdateFrame(DeviceViewFrame):
             return
         self.firmwarepath.set(filename)
         logging.debug(f"firmware update file \"{filename}\" selected.")
+        self._set_update_controls_enabled(False)
         self.update_firmware()
 
 
