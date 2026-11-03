@@ -87,10 +87,14 @@ def main():
         cmd(f"{python_path} {get_pip_path}")
 
     # copy repository
+    gitignore = ""
     with open(".gitignore", "r") as f:
-        gitignore = "".join(f.readlines())
+        for line in f.readlines():
+            if line.startswith("#"):
+                continue
+            gitignore += line
     for item_name in os.listdir(os.getcwd()):
-        if item_name in gitignore and item_name not in ["gitrev.py", "res", ".gitignore"]:
+        if item_name in gitignore and item_name not in ["gitrev.py", "res", ".gitignore", "settings.py"]:
             continue
         item_path = os.path.join(os.getcwd(), item_name)
         print(f"Copying {item_path}...")
