@@ -7,8 +7,6 @@ from datetime import datetime
 import shutil
 import tkinter
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 def cmd(c):
     print(c)
@@ -150,6 +148,8 @@ def main():
     # create manifest.json
     os.chdir(buildpath)
     print("creating manifest...")
+    if os.path.exists("manifest.sig"):
+        os.remove("manifest.sig")
     manifest = {
         "version": gitrev,
         "sha256": sha256_file(installer_path),
@@ -158,20 +158,9 @@ def main():
     with open("manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, separators=(",", ":"), sort_keys=True)
 
-    # sign manifest
-    print("signing manifest...")
-    private_key = serialization.load_pem_private_key(
-        os.environ.get("PRIVATE_KEY").encode(),
-        password=None
-    )
-    with open("manifest.json", "rb") as f:
-        data = f.read()
-    signature = private_key.sign(data)
-    with open("manifest.sig", "wb") as f:
-        f.write(signature)
-
     print("All done!")
 
 
 if __name__ == '__main__':
     main()
+
