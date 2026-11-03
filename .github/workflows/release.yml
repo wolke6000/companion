@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.8"
+
+      # make.py uses git describe, which defaults to annotated tags.
+      - name: Check build version
+        shell: pwsh
+        run: |
+          $version = git describe --always --broken
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($version -ne $env:GITHUB_REF_NAME) {
+            throw "Build version '$version' differs from tag '$env:GITHUB_REF_NAME'. Use an annotated tag."
+          }
+
+      - name: Ensure Inno Setup is installed
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            choco install innosetup --version=6.2.2 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          if (!(Test-Path $iscc)) {
+            throw "Inno Setup compiler not found: $iscc"
+          }
+
+      - run: python -m pip install python-dotenv
+
+      - run: python make.py
+        env:
+          ISCC_PATH: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-build
+          path: |
+            builds/${{ github.ref_name }}/Companion_Setup.exe
+            builds/${{ github.ref_name }}/manifest.json
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: windows-2022
+    environment: release
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.8"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-build
+          path: release-files
+
+      - run: python -m pip install python-dotenv cryptography
+
+      - name: Sign manifest
+        run: python sign.py release-files
+        env:
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+
+      - name: Create draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" `
+            release-files/Companion_Setup.exe `
+            release-files/manifest.json `
+            release-files/manifest.sig `
+            --verify-tag `
+            --draft `
+            --title "$env:GITHUB_REF_NAME" `
+            --generate-notes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
