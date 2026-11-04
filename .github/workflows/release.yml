@@ -54,6 +54,18 @@ jobs:
         env:
           ISCC_PATH: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
 
+      - name: Smoke-test packaged app
+        timeout-minutes: 3
+        run: python scripts/smoke_test.py
+
+      - name: Upload smoke-test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-logs
+          path: smoke-logs/
+          if-no-files-found: ignore
+
       - uses: actions/upload-artifact@v4
         with:
           name: release-build

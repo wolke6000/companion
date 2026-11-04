@@ -4,6 +4,7 @@ import sys
 from tkinter import filedialog, messagebox
 import logging
 import argparse
+import traceback
 import customtkinter
 from customtkinter import CTkToplevel
 
@@ -98,10 +99,19 @@ class GUI(customtkinter.CTk):
                 continue
         self.device_tabview.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
-    def __init__(self, **kwargs):
+    def report_callback_exception(self, exc_type, exc_value, exc_traceback):
+        if not self.smoke_test:
+            return super().report_callback_exception(exc_type, exc_value, exc_traceback)
+        self.smoke_failed = True
+        traceback.print_exception(exc_type, exc_value, exc_traceback)
+        self.quit()
+
+    def __init__(self, smoke_test=False, **kwargs):
+        self.smoke_test = smoke_test
+        self.smoke_failed = False
         super().__init__(**kwargs)
 
-        latest_version = check_for_update()
+        latest_version = None if smoke_test else check_for_update()
         if latest_version:
             ans = messagebox.askquestion(
                 title="Update available!",
@@ -283,6 +293,7 @@ def main():
     )
     parser.add_argument('-d', '--debug', action='store_true', help='set loglevel to DEBUG')
     parser.add_argument('--logfile')
+    parser.add_argument('--smoke-test', action='store_true', help='test startup without updates and exit after three seconds')
 
     args = parser.parse_args()
 
@@ -310,16 +321,41 @@ def main():
     params_string = ', '.join([f'{argname}={argval}' for argname, argval in vars(args).items()])
     logging.info(f"Switchology Cockpit Companion {gitrev} launched with parameters {params_string}")
 
-    gui = GUI()
+    if args.smoke_test:
+        # Fail instead of hanging on any unexpected modal dialog.
+        def unexpected_dialog(*dialog_args, **dialog_kwargs):
+            raise RuntimeError(f"Unexpected dialog during smoke test: {dialog_kwargs}")
+        messagebox._show = unexpected_dialog
+
+    gui = GUI(smoke_test=args.smoke_test)
     gui.title(f"Switchology Cockpit Companion {gitrev}")
     gui.wm_iconbitmap("res/icon.ico")
     # gui.geometry("1000x600")
-    lh = LogHandler(gui.txt_logs)
-    logging.getLogger().addHandler(lh)
+    if not args.smoke_test:
+        lh = LogHandler(gui.txt_logs)
+        logging.getLogger().addHandler(lh)
 
     logging.info("Program start")
-    gui.mainloop()
+    if args.smoke_test:
+        completed = False
+
+        def finish_smoke_test():
+            nonlocal completed
+            completed = True
+            gui.quit()
+
+        gui.after(3000, finish_smoke_test)
+        try:
+            gui.mainloop()
+        finally:
+            gui.destroy()
+        if not completed or gui.smoke_failed:
+            raise SystemExit(1)
+        print("SMOKE_TEST_OK", flush=True)
+    else:
+        gui.mainloop()
 
 
 if __name__ == "__main__":
     main()
+
