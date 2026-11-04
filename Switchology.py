@@ -54,7 +54,7 @@ def dfu_util_list_devices():
         [path_to_dfuutil, "-l"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        timeout=5,
+        timeout=15,
         check=False,
     )
     listout = result.stdout.decode(errors="replace")
