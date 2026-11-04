@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11.8"
+
+      # make.py uses git describe, which defaults to annotated tags.
+      - name: Check build version
+        shell: pwsh
+        run: |
+          $version = git describe --always --broken
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($version -ne $env:GITHUB_REF_NAME) {
+            throw "Build version '$version' differs from tag '$env:GITHUB_REF_NAME'. Use an annotated tag."
+          }
+
+      - name: Ensure Inno Setup is installed
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            choco install innosetup --version=6.2.2 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          if (!(Test-Path $iscc)) {
+            throw "Inno Setup compiler not found: $iscc"
+          }
+
+      - run: python -m pip install python-dotenv
+
+      - run: python make.py
+        env:
+          ISCC_PATH: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+
+      - name: Smoke-test packaged app
+        timeout-minutes: 3
+        run: python scripts/smoke_test.py
+
+      - name: Upload smoke-test logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: smoke-test-logs
+          path: smoke-logs/
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-build
+          path: |
+            builds/${{ github.ref_name }}/Companion_Setup.exe
+            builds/${{ github.ref_name }}/manifest.json
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: windows-2022
+    environment: release
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11.8"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-build
+          path: release-files
+
+      - run: python -m pip install python-dotenv cryptography
+
+      - name: Sign manifest
+        run: python sign.py release-files
+        env:
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+
+      - name: Create draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" `
+            release-files/Companion_Setup.exe `
+            release-files/manifest.json `
+            release-files/manifest.sig `
+            --verify-tag `
+            --draft `
+            --title "$env:GITHUB_REF_NAME" `
+            --generate-notes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
