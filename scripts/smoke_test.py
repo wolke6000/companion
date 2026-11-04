@@ -50,4 +50,5 @@ def run_case(name, missing=None):
 run_case("startup")
 run_case("missing-dll", "swinput.dll")
 run_case("missing-theme", "sw_yellow.json")
+run_case("missing-settings", "settings.py")
 
