@@ -13,7 +13,7 @@ logs = Path("smoke-logs").resolve()
 logs.mkdir(exist_ok=True)
 
 
-def run_case(name, missing=None):
+def run_case(name, missing=None, expected_error=None):
     env = os.environ.copy()
     for variable in ("PYTHONPATH", "PYTHONHOME"):
         env.pop(variable, None)
@@ -38,8 +38,9 @@ def run_case(name, missing=None):
             output = result.stdout.decode("utf-8", errors="replace")
             print(f"{name}: exit {result.returncode}\n{output}", flush=True)
             if missing:
-                if result.returncode == 0 or missing not in output or "SMOKE_TEST_OK" in output:
-                    raise RuntimeError(f"{name}: missing file was not detected")
+                expected = expected_error or missing
+                if result.returncode == 0 or expected not in output or "SMOKE_TEST_OK" in output:
+                    raise RuntimeError(f"{name}: expected failure not detected: {expected}")
             elif result.returncode != 0 or "SMOKE_TEST_OK" not in output:
                 raise RuntimeError(f"{name}: packaged app failed startup")
         finally:
@@ -50,5 +51,9 @@ def run_case(name, missing=None):
 run_case("startup")
 run_case("missing-dll", "swinput.dll")
 run_case("missing-theme", "sw_yellow.json")
-run_case("missing-settings", "settings.py")
+run_case(
+    "missing-settings",
+    "settings.py",
+    expected_error="ModuleNotFoundError: No module named 'settings'",
+)
 
